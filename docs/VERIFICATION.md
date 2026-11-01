@@ -248,7 +248,7 @@ automated tests.
 ### Run-key autostart on real login
 
 1. Build/run the packaged app, tick **Start on login**.
-2. Confirm the value `Muse Relay v2` exists under
+2. Confirm the value `HandsRelay v2` exists under
    `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` (regedit or
    `reg query`) and points at the app.
 3. Sign out and back in: the app window should appear on login.
@@ -335,7 +335,7 @@ merge, all behavior-level, each covered by the combined test suite:
 6. While it drifts, submit a queued act from another device: the act
    applies directly (no yield against the jiggler); `/state`
    `owner_idle_seconds` keeps growing while `idle_seconds` resets.
-7. `POST /jiggler {"enabled": false}`; confirm `muse_relay_config.json`
+7. `POST /jiggler {"enabled": false}`; confirm `hands_relay_config.json`
    kept its other keys.
 
 ## R9 web GUI (#23)

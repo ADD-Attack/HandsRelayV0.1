@@ -5,7 +5,7 @@ They contain the same 14-page specification: F1–F7, watcher 38, invariants,
 testable closure criteria, dependency-ordered packages, and challenge results.
 
 BASELINE
-  ADD-Attack/muse-relay-v2
+  ADD-Attack/HandsRelayV0.1
   ee3cf0e2dbc4bd2b2cac3ee1651471aa41a6dbd1 (public R12)
 
 CONTENTS

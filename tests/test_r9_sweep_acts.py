@@ -28,7 +28,7 @@ def gateway():
 
 @pytest.fixture(scope="module")
 def hands():
-    return _load("hands/muse_relay_hands.py", "r9sweep_hands")
+    return _load("hands/hands_relay_hands.py", "r9sweep_hands")
 
 
 @pytest.fixture

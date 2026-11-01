@@ -43,7 +43,7 @@ across the resting disc after pull + step). Owner-observed live on R11
 - Final emitted step is exactly the target; delays sum to the glide
   duration (drift-corrected, same pattern as `plan_move`).
 
-### `hands/muse_relay_hands.py` — `_RestingHand._move` glides
+### `hands/hands_relay_hands.py` — `_RestingHand._move` glides
 
 - Plans the glide from the pointer's current position to the float
   target and injects the sub-steps (`moveTo(duration=0)` + the planned
@@ -71,7 +71,7 @@ across the resting disc after pull + step). Owner-observed live on R11
 Exhaustive grep of the tree (code, UI, config, build scripts) found
 **no pre-existing runtime version string**: R11 never reported its own
 release — its identity lived in branch/folder/commit names
-(`v3-r11-candidate-20261020`, `%USERPROFILE%\muse-relay-v3-r11`).
+(`v3-r11-candidate-20261020`, `%USERPROFILE%\HandsRelay-v3-r11`).
 Every "R11" string in the source is a feature-attribution comment
 (when a feature landed); those were left untouched as history.
 

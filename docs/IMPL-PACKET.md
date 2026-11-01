@@ -21,7 +21,7 @@ Owner direction (Christopher, 2026-10-20 05:21 CDT): **Astra implements this rou
 ---
 # STAGE 1 — R7.2 fix round
 
-**Base:** branch `v3-r7-2-20261019` @ commit `22a9080` in repo `muse-relay-v2`. That commit = clipboard `ctypes.sizeof` fix + type dwTime re-check in `hands/muse_relay_hands.py`.
+**Base:** branch `v3-r7-2-20261019` @ commit `22a9080` in repo `HandsRelayV0.1`. That commit = clipboard `ctypes.sizeof` fix + type dwTime re-check in `hands/hands_relay_hands.py`.
 **Your own verdict on that commit was DEPLOY-NO-GO** (you reviewed it 2026-10-19; the producer read and recorded it). Findings 1–3 block. Fix findings 1–3 and add the three fix-proving tests the verdict names, **verbatim**:
 
 - `test_owner_input_between_injection_and_postwrite_probe_aborts`
@@ -105,7 +105,7 @@ However, `_clipboard_backend = lambda: None` is installed **before** the main `t
 
 **Do not deploy this combined revision.** Fix and prove findings 1–3, then obtain real Windows clipboard and typing receipts. The `sizeof` change itself is sound; the supplied tests do not establish the replacement typing guard’s correctness.
 
-## Current code you are patching against (branch `v3-r7-2-20261019` @ `22a9080`, `hands/muse_relay_hands.py`)
+## Current code you are patching against (branch `v3-r7-2-20261019` @ `22a9080`, `hands/hands_relay_hands.py`)
 
 ### `_yield_if_active()` — the door check the R7.2 loop replaced at boundaries (context for finding 2: lock + idle live here; the fix needs a lock-only check, not this self-triggering idle check)
 
@@ -624,8 +624,8 @@ import sys
 import types
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-HANDS_PATH = os.path.join(HERE, "muse_relay_hands.py")
-CONFIG_PATH = os.path.join(HERE, "muse_relay_config.json")
+HANDS_PATH = os.path.join(HERE, "hands_relay_hands.py")
+CONFIG_PATH = os.path.join(HERE, "hands_relay_config.json")
 _config_existed = os.path.exists(CONFIG_PATH)
 
 # ------------------------------------------------------------ fakes
@@ -664,7 +664,7 @@ for _name in ("Tk", "StringVar", "Label", "Entry", "Button", "Text"):
     setattr(fake_tk, _name, _Dummy)
 sys.modules["tkinter"] = fake_tk
 
-spec = importlib.util.spec_from_file_location("muse_relay_hands", HANDS_PATH)
+spec = importlib.util.spec_from_file_location("hands_relay_hands", HANDS_PATH)
 hands = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(hands)
 
@@ -1075,7 +1075,7 @@ if __name__ == "__main__":
 
 ```
 
-**Stage 1 deliverable:** fixes for findings 1–3 in `hands/muse_relay_hands.py` (complete file or anchored diff), the three named tests added and passing per-file, plus the stage report. If your mechanism for finding 1 differs from timestamp attribution (the verdict warns timestamp-only post-write attribution cannot reliably distinguish the events), say so explicitly and show the provenance mechanism in the code.
+**Stage 1 deliverable:** fixes for findings 1–3 in `hands/hands_relay_hands.py` (complete file or anchored diff), the three named tests added and passing per-file, plus the stage report. If your mechanism for finding 1 differs from timestamp attribution (the verdict warns timestamp-only post-write attribution cannot reliably distinguish the events), say so explicitly and show the provenance mechanism in the code.
 ---
 # STAGE 2 — R9 wishlist build: human-like pointer system + jiggler
 
@@ -1137,7 +1137,7 @@ Behavioral layer (#30):
 (c) **Randomization:** every movement's parameters are drawn per movement; never a fixed pattern or a fixed curve (a fixed curve is just a new signature).
 (d) **Feature flags:** the motion system and the jiggler sit behind separate flags — motion flag **default ON**, jiggler flag **default OFF**.
 
-## Existing motion code you build on (`hands/muse_relay_hands.py` @ Stage-1 base)
+## Existing motion code you build on (`hands/hands_relay_hands.py` @ Stage-1 base)
 
 The hands service already has `_plan_key_delays`, `_ease_in_out_cubic`, `_bezier`, `_plan_path`, `_move_human`, `move()`, `click()`, `drag()` — extend/replace coherently; do not bolt on a parallel system that disagrees with these seams.
 
@@ -1330,11 +1330,11 @@ def _monitor_for_bounds(bounds, rects=None):
 ## Behavioral requirements (hard — these preserve how the app actually works)
 
 1. **No auto-start, ever.** The current app does NOT start services on launch: the window opens idle and waits for its Start button ("Press Start to run all three services in this window"). The web UI must preserve **explicit Start/Stop control** of the three services (gateway / hands / parser), with each service's live state visible exactly as the current tiles show it.
-2. **Existing config + token flow keep working.** The app reads/writes `muse_relay_config.json` and the per-launch gateway token flow (token generated/loaded by the app, shown in the window for the operator to copy, never logged). The web UI must not break the config file's shape or the token's lifecycle.
+2. **Existing config + token flow keep working.** The app reads/writes `hands_relay_config.json` and the per-launch gateway token flow (token generated/loaded by the app, shown in the window for the operator to copy, never logged). The web UI must not break the config file's shape or the token's lifecycle.
 3. **One GUI.** The Tkinter window is removed or fully superseded — no dual GUIs, no leftover Tk entry point.
 4. **Everything the Tk window does today must have a web-UI home:** service tiles + status lines, the scrolling log, hands claim + queue state, PC lock / probe state, receipts summary, one-click diagnostics (copy to clipboard), copy-token, the elevation-request approval dialog (the ONLY approval path for elevated runs — preserve its semantics exactly: a named request from the operator's allowlist, resolved only by a person in the window), and the "Start on login" toggle.
 
-## Current app file — structure + UI sections (`muse_relay_v2_app.py` @ Stage-1 base, 1210 lines)
+## Current app file — structure + UI sections (`hands_relay_v2_app.py` @ Stage-1 base, 1210 lines)
 
 The app imports tkinter at line 50 and owns Start/Stop + tiles + log behavior. Full def/class outline:
 
@@ -1387,12 +1387,12 @@ The app imports tkinter at line 50 and owns Start/Stop + tiles + log behavior. F
 Module docstring (the app's own description of its behavior contract):
 
 ```python
-"""Muse Relay v2 — packaged single-window app (Windows).
+"""HandsRelay v2 — packaged single-window app (Windows).
 
 One icon, one button: the window opens idle, and pressing Start brings
 up all three relay services in this one process —
 
-  * hands   on 127.0.0.1:5000  (hands/muse_relay_hands.py, headless: no
+  * hands   on 127.0.0.1:5000  (hands/hands_relay_hands.py, headless: no
     separate window, no tunnel — localhost only, as designed)
   * gateway on :5010           (the agent-facing API)
   * parser  on :5011           (screen parsing)
@@ -1401,14 +1401,14 @@ The status lines show each service; the log shows what happened.
 
 Secrets:
   * The gateway token persists per machine at
-    %USERPROFILE%\\.muse-relay-v2\\gateway-token.txt — generated on first
+    %USERPROFILE%\\.HandsRelayV0.1\\gateway-token.txt — generated on first
     run, reused after that (delete the file to rotate). It is shown in
     the window with a Copy button so the operator can hand it to the
     agent once; after that, the same token keeps working across
     relaunches, which is what lets the agent keep hands while the
     owner is away from the PC.
   * The hands secret is owned by this app and persists per machine at
-    %USERPROFILE%\\.muse-relay-v2\\hands-secret.txt — generated on first
+    %USERPROFILE%\\.HandsRelayV0.1\\hands-secret.txt — generated on first
     run, reused after that (delete the file to rotate). It is never
     logged or displayed. The app hands the same value to the gateway
     and to the in-process hands, which is the whole point of bundling
@@ -1475,7 +1475,7 @@ class RelayApp:
     # ---------- UI ----------
     def _build_ui(self):
         root = self.root
-        root.title("Muse Relay v2")
+        root.title("HandsRelay v2")
         root.geometry("760x680")
         root.minsize(680, 560)
 
@@ -1760,7 +1760,7 @@ Service start machinery (`_start_all`, `_start_one`, `_start_one_locked`):
             probe.settimeout(0.5)
             if probe.connect_ex(("127.0.0.1", port)) == 0:
                 hint = (
-                    " (an old v1 Muse Relay window counts — close it)"
+                    " (an old v1 HandsRelay window counts — close it)"
                     if name == "hands"
                     else ""
                 )
@@ -1772,7 +1772,7 @@ Service start machinery (`_start_all`, `_start_one`, `_start_one_locked`):
                 self.set_status(name, f"{label} (:{port}): already running elsewhere")
                 return
         try:
-            module = _load_service(f"muse_relay_v2_{name}", SERVICE_FILES[name])
+            module = _load_service(f"hands_relay_v2_{name}", SERVICE_FILES[name])
         except Exception as exc:
             self.log_line(f"ERROR: could not load the {name} service: {exc}")
             self.set_status(name, f"{label} (:{port}): failed to load")

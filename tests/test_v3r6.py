@@ -1,7 +1,7 @@
 """Tests for the R6 dashboard data layer (wishlist #23, first revision).
 
 The dashboard's model builders are pure functions in
-muse_relay_v2_app.py; they are exercised headless with the same
+hands_relay_v2_app.py; they are exercised headless with the same
 stub-and-importlib-from-file pattern test_app.py uses. RelayApp
 itself is never instantiated (it builds a live Tk window).
 """
@@ -30,8 +30,8 @@ sys.modules["pyautogui"] = _fake_gui
 
 
 def _load_app():
-    path = os.path.join(os.path.dirname(__file__), "..", "muse_relay_v2_app.py")
-    name = "muse_relay_v2_app_r6"
+    path = os.path.join(os.path.dirname(__file__), "..", "hands_relay_v2_app.py")
+    name = "hands_relay_v2_app_r6"
     spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module
@@ -207,7 +207,7 @@ def test_format_diagnostics_healthy():
         NOW,
     )
     text = APP.format_diagnostics(model, "19:42:07")
-    assert "Muse Relay diagnostics — 19:42:07" in text
+    assert "HandsRelay diagnostics — 19:42:07" in text
     assert "gateway ok" in text and "hands ok" in text and "parser ok" in text
     assert "main — chess benchmark" in text
     assert "expires in 12m 00s" in text

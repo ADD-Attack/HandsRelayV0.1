@@ -117,162 +117,162 @@
       "line": 1396
     },
     {
-      "file": "hands/muse_relay_hands.py",
+      "file": "hands/hands_relay_hands.py",
       "symbol": "gate",
       "line": 396
     },
     {
-      "file": "hands/muse_relay_hands.py",
+      "file": "hands/hands_relay_hands.py",
       "symbol": "_yield_if_active",
       "line": 236
     },
     {
-      "file": "hands/muse_relay_hands.py",
+      "file": "hands/hands_relay_hands.py",
       "symbol": "_focus_guard",
       "line": 336
     },
     {
-      "file": "hands/muse_relay_hands.py",
+      "file": "hands/hands_relay_hands.py",
       "symbol": "_input",
       "line": 659
     },
     {
-      "file": "hands/muse_relay_hands.py",
+      "file": "hands/hands_relay_hands.py",
       "symbol": "_input.__enter__",
       "line": 665
     },
     {
-      "file": "hands/muse_relay_hands.py",
+      "file": "hands/hands_relay_hands.py",
       "symbol": "_input.__exit__",
       "line": 670
     },
     {
-      "file": "hands/muse_relay_hands.py",
+      "file": "hands/hands_relay_hands.py",
       "symbol": "_run_path",
       "line": 693
     },
     {
-      "file": "hands/muse_relay_hands.py",
+      "file": "hands/hands_relay_hands.py",
       "symbol": "move",
       "line": 719
     },
     {
-      "file": "hands/muse_relay_hands.py",
+      "file": "hands/hands_relay_hands.py",
       "symbol": "click",
       "line": 734
     },
     {
-      "file": "hands/muse_relay_hands.py",
+      "file": "hands/hands_relay_hands.py",
       "symbol": "type_text",
       "line": 808
     },
     {
-      "file": "hands/muse_relay_hands.py",
+      "file": "hands/hands_relay_hands.py",
       "symbol": "type_text._keys",
       "line": 846
     },
     {
-      "file": "hands/muse_relay_hands.py",
+      "file": "hands/hands_relay_hands.py",
       "symbol": "type_text._paste",
       "line": 893
     },
     {
-      "file": "hands/muse_relay_hands.py",
+      "file": "hands/hands_relay_hands.py",
       "symbol": "_type_dispatch",
       "line": 790
     },
     {
-      "file": "hands/muse_relay_hands.py",
+      "file": "hands/hands_relay_hands.py",
       "symbol": "key",
       "line": 965
     },
     {
-      "file": "hands/muse_relay_hands.py",
+      "file": "hands/hands_relay_hands.py",
       "symbol": "scroll",
       "line": 973
     },
     {
-      "file": "hands/muse_relay_hands.py",
+      "file": "hands/hands_relay_hands.py",
       "symbol": "hotkey",
       "line": 1945
     },
     {
-      "file": "hands/muse_relay_hands.py",
+      "file": "hands/hands_relay_hands.py",
       "symbol": "break_",
       "line": 1961
     },
     {
-      "file": "hands/muse_relay_hands.py",
+      "file": "hands/hands_relay_hands.py",
       "symbol": "drag",
       "line": 1990
     },
     {
-      "file": "hands/muse_relay_hands.py",
+      "file": "hands/hands_relay_hands.py",
       "symbol": "focus",
       "line": 2223
     },
     {
-      "file": "hands/muse_relay_hands.py",
+      "file": "hands/hands_relay_hands.py",
       "symbol": "clipboard_set",
       "line": 2364
     },
     {
-      "file": "hands/muse_relay_hands.py",
+      "file": "hands/hands_relay_hands.py",
       "symbol": "_TypeOwnerGuard",
       "line": 1201
     },
     {
-      "file": "hands/muse_relay_hands.py",
+      "file": "hands/hands_relay_hands.py",
       "symbol": "_OwnerInputMonitor",
       "line": 1097
     },
     {
-      "file": "hands/muse_relay_hands.py",
+      "file": "hands/hands_relay_hands.py",
       "symbol": "_RestingHand.set_claim",
       "line": 1517
     },
     {
-      "file": "hands/muse_relay_hands.py",
+      "file": "hands/hands_relay_hands.py",
       "symbol": "_RestingHand.claim_held",
       "line": 1534
     },
     {
-      "file": "hands/muse_relay_hands.py",
+      "file": "hands/hands_relay_hands.py",
       "symbol": "_RestingHand.status",
       "line": 1552
     },
     {
-      "file": "hands/muse_relay_hands.py",
+      "file": "hands/hands_relay_hands.py",
       "symbol": "_RestingHand.step",
       "line": 1563
     },
     {
-      "file": "hands/muse_relay_hands.py",
+      "file": "hands/hands_relay_hands.py",
       "symbol": "_RestingHand._move",
       "line": 1611
     },
     {
-      "file": "hands/muse_relay_hands.py",
+      "file": "hands/hands_relay_hands.py",
       "symbol": "resting_claim",
       "line": 1698
     },
     {
-      "file": "hands/muse_relay_hands.py",
+      "file": "hands/hands_relay_hands.py",
       "symbol": "_grab",
       "line": 511
     },
     {
-      "file": "hands/muse_relay_hands.py",
+      "file": "hands/hands_relay_hands.py",
       "symbol": "screenshot",
       "line": 542
     },
     {
-      "file": "hands/muse_relay_hands.py",
+      "file": "hands/hands_relay_hands.py",
       "symbol": "_monitor_rects",
       "line": 467
     },
     {
-      "file": "hands/muse_relay_hands.py",
+      "file": "hands/hands_relay_hands.py",
       "symbol": "_parse_region",
       "line": 524
     },
@@ -297,42 +297,42 @@
       "line": 505
     },
     {
-      "file": "muse_relay_v2_app.py",
+      "file": "hands_relay_v2_app.py",
       "symbol": "_snapshot_receipt_rows",
       "line": 236
     },
     {
-      "file": "muse_relay_v2_app.py",
+      "file": "hands_relay_v2_app.py",
       "symbol": "summarize_receipts",
       "line": 256
     },
     {
-      "file": "muse_relay_v2_app.py",
+      "file": "hands_relay_v2_app.py",
       "symbol": "receipt_state_counts",
       "line": 287
     },
     {
-      "file": "muse_relay_v2_app.py",
+      "file": "hands_relay_v2_app.py",
       "symbol": "build_dashboard_model",
       "line": 332
     },
     {
-      "file": "muse_relay_v2_app.py",
+      "file": "hands_relay_v2_app.py",
       "symbol": "_watchers_or_empty",
       "line": 317
     },
     {
-      "file": "muse_relay_v2_app.py",
+      "file": "hands_relay_v2_app.py",
       "symbol": "format_diagnostics",
       "line": 433
     },
     {
-      "file": "muse_relay_v2_app.py",
+      "file": "hands_relay_v2_app.py",
       "symbol": "RelayApp._start_one_locked",
       "line": 914
     },
     {
-      "file": "muse_relay_v2_app.py",
+      "file": "hands_relay_v2_app.py",
       "symbol": "RelayApp.stop",
       "line": 1169
     },
@@ -362,7 +362,7 @@
       "line": 1
     },
     {
-      "file": "hands/build_muse_relay.bat",
+      "file": "hands/build_hands_relay.bat",
       "symbol": null,
       "line": 1
     },

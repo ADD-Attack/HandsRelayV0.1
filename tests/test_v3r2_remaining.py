@@ -1,4 +1,4 @@
-"""Fixes for muse-relay v3 R2. Loads the service modules by path."""
+"""Fixes for HandsRelay v3 R2. Loads the service modules by path."""
 import importlib.util
 import inspect
 import os
@@ -26,7 +26,7 @@ def gateway():
 
 @pytest.fixture(scope="module")
 def hands():
-    return _load("hands/muse_relay_hands.py")
+    return _load("hands/hands_relay_hands.py")
 
 
 @pytest.fixture(scope="module")
@@ -36,7 +36,7 @@ def parser():
 
 @pytest.fixture(scope="module")
 def packaged():
-    return _load("muse_relay_v2_app.py")
+    return _load("hands_relay_v2_app.py")
 
 
 def _ui_class(mod):

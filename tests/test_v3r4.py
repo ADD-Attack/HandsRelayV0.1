@@ -1,4 +1,4 @@
-"""Muse Relay v3 R4 improvement-round tests.
+"""HandsRelay v3 R4 improvement-round tests.
 
 Covers: F2 (pyautogui.PAUSE), F3 (expect_focus guard), F4 (receipt
 for every queued act + terminal-first eviction), F5 (/break and
@@ -34,7 +34,7 @@ def gateway():
 
 @pytest.fixture(scope="module")
 def hands():
-    return _load("hands/muse_relay_hands.py")
+    return _load("hands/hands_relay_hands.py")
 
 
 def _status(resp):
@@ -50,7 +50,7 @@ def _body(resp):
 def test_pause_is_zero_after_hands_import():
     pag = sys.modules["pyautogui"]
     pag.PAUSE = 0.15  # the old global tax; importing the hands must clear it
-    _load("hands/muse_relay_hands.py", tag="v3r4_pause")
+    _load("hands/hands_relay_hands.py", tag="v3r4_pause")
     assert pag.PAUSE == 0
 
 

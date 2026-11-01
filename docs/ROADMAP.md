@@ -1,6 +1,6 @@
-# Muse Relay v2 — execution brief for Claude Opus 5.5
+# HandsRelay v2 — execution brief for Claude Opus 5.5
 
-_You are Claude Opus 5.5, working in the repo `ADD-Attack/muse-relay-v2`.
+_You are Claude Opus 5.5, working in the repo `ADD-Attack/HandsRelayV0.1`.
 Your job: complete the work packages below, in order, testing as you go,
 and commit your work. This file is your spec — if something here conflicts
 with the code, trust the code for current state and this file for intent,
