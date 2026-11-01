@@ -8,7 +8,7 @@ machines, and allowlists.
 
     python3 test_filedrop_state.py
 
-Note: importing the hands module may create muse_relay_config.json next
+Note: importing the hands module may create hands_relay_config.json next
 to it (its per-launch alert-topic config). This test deletes that file
 afterwards when it did not exist before the run; never commit it.
 """
@@ -23,10 +23,10 @@ import tempfile
 import types
 
 HANDS_DIR = os.path.dirname(os.path.abspath(__file__))
-HANDS_PATH = os.path.join(HANDS_DIR, "muse_relay_hands.py")
-CONFIG_PATH = os.path.join(HANDS_DIR, "muse_relay_config.json")
+HANDS_PATH = os.path.join(HANDS_DIR, "hands_relay_hands.py")
+CONFIG_PATH = os.path.join(HANDS_DIR, "hands_relay_config.json")
 CONFIG_EXISTED_BEFORE = os.path.exists(CONFIG_PATH)
-LOG_PATH = os.path.join(HANDS_DIR, "muse_relay.log")
+LOG_PATH = os.path.join(HANDS_DIR, "hands_relay.log")
 LOG_EXISTED_BEFORE = os.path.exists(LOG_PATH)
 
 
@@ -79,7 +79,7 @@ def _fake_tkinter():
 def _load_hands():
     sys.modules["pyautogui"] = _fake_pyautogui()
     sys.modules["tkinter"] = _fake_tkinter()
-    spec = importlib.util.spec_from_file_location("muse_relay_hands_under_test", HANDS_PATH)
+    spec = importlib.util.spec_from_file_location("hands_relay_hands_under_test", HANDS_PATH)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod

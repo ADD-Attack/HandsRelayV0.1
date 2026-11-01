@@ -83,7 +83,7 @@ sys.modules["winreg"] = _fake_reg
 # --- load the app module from its file path --------------------------------
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _spec = importlib.util.spec_from_file_location(
-    "muse_relay_v2_app_under_test", os.path.join(_HERE, "muse_relay_v2_app.py")
+    "hands_relay_v2_app_under_test", os.path.join(_HERE, "hands_relay_v2_app.py")
 )
 appmod = importlib.util.module_from_spec(_spec)
 sys.modules[_spec.name] = appmod
@@ -104,9 +104,9 @@ def run():
     try:
         # --- _autostart_command shape ---------------------------------
         sys.frozen = True
-        sys.executable = r"C:\Relay\Muse Relay v2.exe"
+        sys.executable = r"C:\Relay\HandsRelay v2.exe"
         check("frozen command is the quoted executable",
-              appmod._autostart_command() == r'"C:\Relay\Muse Relay v2.exe"')
+              appmod._autostart_command() == r'"C:\Relay\HandsRelay v2.exe"')
 
         sys.frozen = False
         sys.executable = r"C:\Python\python.exe"
@@ -131,8 +131,8 @@ def run():
           == appmod._autostart_command())
     check("enabled() is True after set(True)",
           appmod._autostart_enabled() is True)
-    check("value name is 'Muse Relay v2'",
-          appmod.AUTOSTART_VALUE_NAME == "Muse Relay v2")
+    check("value name is 'HandsRelay v2'",
+          appmod.AUTOSTART_VALUE_NAME == "HandsRelay v2")
     check("set(False) succeeds", appmod._set_autostart(False) is True)
     check("set(False) removes the Run value",
           appmod.AUTOSTART_VALUE_NAME not in _reg_values)

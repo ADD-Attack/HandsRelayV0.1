@@ -1,4 +1,4 @@
-"""Muse Relay v3 R5 tests — F10 probe-health accounting.
+"""HandsRelay v3 R5 tests — F10 probe-health accounting.
 
 The wrapper counts consecutive FULL probe failures (locked and idle
 both None) on Windows only, flips probe_ok at 3, logs once per
@@ -24,7 +24,7 @@ def _load(rel):
 
 @pytest.fixture(scope="module")
 def hands():
-    return _load("hands/muse_relay_hands.py")
+    return _load("hands/hands_relay_hands.py")
 
 
 @pytest.fixture(autouse=True)

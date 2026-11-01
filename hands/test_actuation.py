@@ -24,8 +24,8 @@ import sys
 import types
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-HANDS_PATH = os.path.join(HERE, "muse_relay_hands.py")
-CONFIG_PATH = os.path.join(HERE, "muse_relay_config.json")
+HANDS_PATH = os.path.join(HERE, "hands_relay_hands.py")
+CONFIG_PATH = os.path.join(HERE, "hands_relay_config.json")
 _config_existed = os.path.exists(CONFIG_PATH)
 
 # ------------------------------------------------------------ fakes
@@ -64,7 +64,7 @@ for _name in ("Tk", "StringVar", "Label", "Entry", "Button", "Text"):
     setattr(fake_tk, _name, _Dummy)
 sys.modules["tkinter"] = fake_tk
 
-spec = importlib.util.spec_from_file_location("muse_relay_hands", HANDS_PATH)
+spec = importlib.util.spec_from_file_location("hands_relay_hands", HANDS_PATH)
 hands = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(hands)
 

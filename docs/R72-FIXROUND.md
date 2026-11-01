@@ -1,7 +1,7 @@
 # R7.2 fix round — answer to Astra's DEPLOY-NO-GO on `22a9080` (+ Grok)
 
 Branch `v3-r7-2-fix-20261020`, based on `v3-r7-2-20261019` @ `22a9080`. Nothing deployed.
-All code is in `hands/muse_relay_hands.py`; tests in `tests/test_r72_fixround.py` unless noted.
+All code is in `hands/hands_relay_hands.py`; tests in `tests/test_r72_fixround.py` unless noted.
 
 ## Mechanism
 Finding 1 says timestamp attribution cannot be made reliable, so the

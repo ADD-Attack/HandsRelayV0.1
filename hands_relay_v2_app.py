@@ -1,9 +1,9 @@
-"""Muse Relay v2 — packaged single-window app (Windows).
+"""HandsRelay v2 — packaged single-window app (Windows).
 
 One icon, one button: the window opens idle, and pressing Start brings
 up all three relay services in this one process —
 
-  * hands   on 127.0.0.1:5000  (hands/muse_relay_hands.py, headless: no
+  * hands   on 127.0.0.1:5000  (hands/hands_relay_hands.py, headless: no
     separate window, no tunnel — localhost only, as designed)
   * gateway on :5010           (the agent-facing API)
   * parser  on :5011           (screen parsing)
@@ -12,14 +12,14 @@ The status lines show each service; the log shows what happened.
 
 Secrets:
   * The gateway token persists per machine at
-    %USERPROFILE%\\.muse-relay-v2\\gateway-token.txt — generated on first
+    %USERPROFILE%\\.HandsRelayV0.1\\gateway-token.txt — generated on first
     run, reused after that (delete the file to rotate). It is shown in
     the window with a Copy button so the operator can hand it to the
     agent once; after that, the same token keeps working across
     relaunches, which is what lets the agent keep hands while the
     owner is away from the PC.
   * The hands secret is owned by this app and persists per machine at
-    %USERPROFILE%\\.muse-relay-v2\\hands-secret.txt — generated on first
+    %USERPROFILE%\\.HandsRelayV0.1\\hands-secret.txt — generated on first
     run, reused after that (delete the file to rotate). It is never
     logged or displayed. The app hands the same value to the gateway
     and to the in-process hands, which is the whole point of bundling
@@ -66,7 +66,7 @@ HANDS_URL = "http://127.0.0.1:5000"
 POLL_MS = 5000
 
 SERVICE_FILES = {
-    "hands": "hands/muse_relay_hands.py",
+    "hands": "hands/hands_relay_hands.py",
     "parser": "services/parser/app.py",
     "gateway": "services/gateway/app.py",
 }
@@ -75,7 +75,7 @@ SERVICE_HOSTS = {"hands": "127.0.0.1", "parser": "127.0.0.1", "gateway": "0.0.0.
 SERVICE_LABELS = {"hands": "Hands", "parser": "Parser", "gateway": "Gateway"}
 
 AUTOSTART_RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
-AUTOSTART_VALUE_NAME = "Muse Relay v2"
+AUTOSTART_VALUE_NAME = "HandsRelay v2"
 
 
 def _winreg():
@@ -434,7 +434,7 @@ def format_diagnostics(model, stamp):
     """One-click diagnostics text (clipboard + log) from a model."""
     svc = model.get("services", {})
     lines = [
-        f"Muse Relay diagnostics — {stamp}",
+        f"HandsRelay diagnostics — {stamp}",
         "Services: gateway {g} · hands {h} · parser {p}".format(
             g=svc.get("gateway", "?"), h=svc.get("hands", "?"), p=svc.get("parser", "?")
         ),
@@ -516,7 +516,7 @@ def _icon_path():
 
 
 def _hands_secret_path():
-    return os.path.join(os.path.expanduser("~"), ".muse-relay-v2", "hands-secret.txt")
+    return os.path.join(os.path.expanduser("~"), ".HandsRelayV0.1", "hands-secret.txt")
 
 
 def _load_or_create_hands_secret():
@@ -550,7 +550,7 @@ def _load_or_create_hands_secret():
 
 
 def _gateway_token_path():
-    return os.path.join(os.path.expanduser("~"), ".muse-relay-v2", "gateway-token.txt")
+    return os.path.join(os.path.expanduser("~"), ".HandsRelayV0.1", "gateway-token.txt")
 
 
 def _load_or_create_gateway_token():
@@ -926,7 +926,7 @@ class RelayApp:
             probe.settimeout(0.5)
             if probe.connect_ex(("127.0.0.1", port)) == 0:
                 hint = (
-                    " (an old v1 Muse Relay window counts — close it)"
+                    " (an old v1 HandsRelay window counts — close it)"
                     if name == "hands"
                     else ""
                 )
@@ -938,7 +938,7 @@ class RelayApp:
                 self.set_status(name, f"{label} (:{port}): already running elsewhere")
                 return
         try:
-            module = _load_service(f"muse_relay_v2_{name}", SERVICE_FILES[name])
+            module = _load_service(f"hands_relay_v2_{name}", SERVICE_FILES[name])
         except Exception as exc:
             self.log_line(f"ERROR: could not load the {name} service: {exc}")
             self.set_status(name, f"{label} (:{port}): failed to load")
@@ -1222,7 +1222,7 @@ def build_ui_server(relay, ui_key, port_ref=None):
     the port part of the check (tests)."""
     import hmac
 
-    ui = flask.Flask("muse_relay_v2_ui", static_folder=None)
+    ui = flask.Flask("hands_relay_v2_ui", static_folder=None)
     ui_root = _ui_dir()
 
     def _host_ok():
@@ -1348,7 +1348,7 @@ def main():
             relay.stop()
         return
     window = webview.create_window(
-        "Muse Relay v2",
+        "HandsRelay v2",
         url,
         # R11: the default IS the minimum size (owner: "a really good size").
         width=980,

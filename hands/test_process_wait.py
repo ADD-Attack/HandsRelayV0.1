@@ -25,7 +25,7 @@ def modules(tmp_path):
     tk.Tk = object
     # Import from a temporary copy: no config/log artifacts in the source tree.
     source = tmp_path / "hands.py"
-    source.write_bytes((ROOT / "hands/muse_relay_hands.py").read_bytes())
+    source.write_bytes((ROOT / "hands/hands_relay_hands.py").read_bytes())
     # R9: the hands loads its sibling motion.py by path.
     (tmp_path / "motion.py").write_bytes((ROOT / "hands/motion.py").read_bytes())
     with patch.dict(sys.modules, {"pyautogui": pag, "tkinter": tk}):

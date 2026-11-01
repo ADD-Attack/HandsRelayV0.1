@@ -53,7 +53,7 @@ def _independent_read():
 
 
 def test_windows_clipboard_real_roundtrip():
-    spec = importlib.util.spec_from_file_location("live_clip_hands", ROOT / "hands/muse_relay_hands.py")
+    spec = importlib.util.spec_from_file_location("live_clip_hands", ROOT / "hands/hands_relay_hands.py")
     hands = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(hands)
     backend = hands._WindowsClipboardBackend()

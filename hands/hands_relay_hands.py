@@ -1,5 +1,5 @@
 """
-Muse Relay -- let Muse drive your Windows mouse/keyboard, with your consent.
+HandsRelay -- let Muse drive your Windows mouse/keyboard, with your consent.
 
 One small window. No terminals.
 
@@ -126,7 +126,7 @@ def _load_motion():
     bundled = os.path.join(getattr(sys, "_MEIPASS", ""), "hands", "motion.py")
     if not os.path.exists(path) and os.path.exists(bundled):
         path = bundled
-    spec = importlib.util.spec_from_file_location("muse_relay_hands_motion", path)
+    spec = importlib.util.spec_from_file_location("hands_relay_hands_motion", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
@@ -150,8 +150,8 @@ LOCKOUT_SECONDS = 300  # ...5 minutes (restart the app to clear early)
 _BASE_DIR = os.path.dirname(
     os.path.abspath(sys.executable if getattr(sys, "frozen", False) else __file__)
 )
-_CONFIG_PATH = os.path.join(_BASE_DIR, "muse_relay_config.json")
-_LOG_FILE = os.path.join(_BASE_DIR, "muse_relay.log")
+_CONFIG_PATH = os.path.join(_BASE_DIR, "hands_relay_config.json")
+_LOG_FILE = os.path.join(_BASE_DIR, "hands_relay.log")
 
 
 def _load_config() -> dict:
@@ -173,7 +173,7 @@ def _save_config(cfg: dict) -> None:
 _cfg = _load_config()
 ALERT_TOPIC = str(_cfg.get("ntfy_topic") or "").strip()
 if not ALERT_TOPIC:
-    ALERT_TOPIC = "muse-relay-" + secrets_mod.token_hex(6)
+    ALERT_TOPIC = "HandsRelay-" + secrets_mod.token_hex(6)
     _cfg["ntfy_topic"] = ALERT_TOPIC
     _save_config(_cfg)
 
@@ -412,7 +412,7 @@ def gate():
             )
             file_log("LOCKOUT triggered (10 bad secrets inside 10 minutes)")
             alert_phone(
-                "Muse Relay LOCKOUT",
+                "HandsRelay LOCKOUT",
                 "Someone just made 10 bad secret guesses at your relay. "
                 "Authentication is paused for 5 minutes.",
             )
@@ -2531,7 +2531,7 @@ class RelayApp:
         self.transport = None
         self.stopping = False
 
-        root.title("Muse Relay")
+        root.title("HandsRelay")
         root.resizable(False, False)
         self._set_icon()
 
