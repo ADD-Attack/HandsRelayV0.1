@@ -1,8 +1,8 @@
 services:
   gateway:
     build: ./services/gateway
-    image: muse-relay-gateway
-    container_name: muse-relay-gateway
+    image: HandsRelay-gateway
+    container_name: HandsRelay-gateway
     restart: unless-stopped
     ports:
       - "127.0.0.1:5010:5010"   # localhost only; expose via Tailscale, never 0.0.0.0
@@ -18,8 +18,8 @@ services:
 
   parser:
     build: ./services/parser
-    image: muse-relay-parser
-    container_name: muse-relay-parser
+    image: HandsRelay-parser
+    container_name: HandsRelay-parser
     restart: unless-stopped
     environment:
       # Inside the compose network the gateway container reaches the

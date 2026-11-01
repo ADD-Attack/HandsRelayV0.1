@@ -12,7 +12,7 @@ import pytest
     ('focus', {'title': 'safe'}), ('clipboard/set', {'text': 'private'}),
 ])
 def test_lock_change_after_acquisition_refuses_every_route(monkeypatch, path, payload):
-    spec = importlib.util.spec_from_file_location('b06_hands', Path(__file__).resolve().parents[1] / 'hands/muse_relay_hands.py')
+    spec = importlib.util.spec_from_file_location('b06_hands', Path(__file__).resolve().parents[1] / 'hands/hands_relay_hands.py')
     h = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(h)
     h.SHARED_SECRET = 'secret'

@@ -9,8 +9,8 @@ param forwarding into pyautogui.
 
     python3 test_capture_realism.py
 
-Note: importing the hands module may create muse_relay_config.json (and
-a bad-secret probe creates muse_relay.log) next to it; both are removed
+Note: importing the hands module may create hands_relay_config.json (and
+a bad-secret probe creates hands_relay.log) next to it; both are removed
 again at the end if they did not exist before the run. Never commit
 either file.
 """
@@ -78,13 +78,13 @@ fake_tk.Button = object
 fake_tk.Text = object
 sys.modules["tkinter"] = fake_tk
 
-_CONFIG = os.path.join(HERE, "muse_relay_config.json")
-_LOG = os.path.join(HERE, "muse_relay.log")
+_CONFIG = os.path.join(HERE, "hands_relay_config.json")
+_LOG = os.path.join(HERE, "hands_relay.log")
 _config_preexisted = os.path.exists(_CONFIG)
 _log_preexisted = os.path.exists(_LOG)
 
 spec = importlib.util.spec_from_file_location(
-    "muse_relay_hands", os.path.join(HERE, "muse_relay_hands.py")
+    "hands_relay_hands", os.path.join(HERE, "hands_relay_hands.py")
 )
 hands = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(hands)

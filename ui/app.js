@@ -1,4 +1,4 @@
-/* Muse Relay v2 — window logic.
+/* HandsRelay v2 — window logic.
  *
  * Safety rules for this file (reviewers: check these first):
  *  - Every value from the API is written with textContent / dataset /

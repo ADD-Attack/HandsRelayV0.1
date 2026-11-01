@@ -1,6 +1,6 @@
 """Durable gateway claim authority.
 
-State directory: ``MUSE_RELAY_STATE_DIR``, or ``services/gateway/state``
+State directory: ``HANDS_RELAY_STATE_DIR``, or ``services/gateway/state``
 beside this file when the gateway process starts. Two files live there:
 
 - ``high-water.json`` — pairing id and the highest epoch this directory

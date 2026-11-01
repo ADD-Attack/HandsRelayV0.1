@@ -19,7 +19,7 @@ URL40 = "https://www.spotify.com/account/privacy/"
 
 @pytest.fixture(scope="module")
 def hands():
-    spec = importlib.util.spec_from_file_location("r72fix_hands", ROOT / "hands/muse_relay_hands.py")
+    spec = importlib.util.spec_from_file_location("r72fix_hands", ROOT / "hands/hands_relay_hands.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod

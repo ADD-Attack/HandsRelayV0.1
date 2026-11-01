@@ -4,7 +4,7 @@ from pathlib import Path
 
 def load_hands(directory, monkeypatch):
     spec = importlib.util.spec_from_file_location(
-        "b14_hands", Path(__file__).resolve().parents[1] / "hands/muse_relay_hands.py")
+        "b14_hands", Path(__file__).resolve().parents[1] / "hands/hands_relay_hands.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     module.SHARED_SECRET = "s"
@@ -109,7 +109,7 @@ def test_startup_with_no_claim_sends_a_release(tmp_path, monkeypatch):
 
 def test_dashboard_shows_sync_health():
     spec = importlib.util.spec_from_file_location(
-        "b14_app", Path(__file__).resolve().parents[1] / "muse_relay_v2_app.py")
+        "b14_app", Path(__file__).resolve().parents[1] / "hands_relay_v2_app.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     info = {"hands_reachable": True, "parser_reachable": True, "pc_state": None,

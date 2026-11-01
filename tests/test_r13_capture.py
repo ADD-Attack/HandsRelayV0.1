@@ -20,7 +20,7 @@ class FakeModule(types.ModuleType):
 def load_hands(monkeypatch):
     for name in ("pyautogui", "tkinter", "tkinter.messagebox"):
         monkeypatch.setitem(sys.modules, name, FakeModule(name))
-    path = Path(__file__).resolve().parents[1] / "hands/muse_relay_hands.py"
+    path = Path(__file__).resolve().parents[1] / "hands/hands_relay_hands.py"
     spec = importlib.util.spec_from_file_location("b15_hands", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

@@ -25,7 +25,7 @@ def test_abort_polling_list_and_dashboard(monkeypatch, reason, state):
     assert c.get('/v1/act/queued', headers=headers).json['receipts'][0]['state'] == state
     g._pump_receipt(g._receipts[rid], 100)
     assert rid not in g._pending_payloads
-    app = load(ROOT / 'muse_relay_v2_app.py')
+    app = load(ROOT / 'hands_relay_v2_app.py')
     snap = app._snapshot_receipt_rows(g._receipts)
     assert app.receipt_state_counts(snap) == {state: 1}
     assert app.summarize_receipts(snap, 100)[0]['state'] == state

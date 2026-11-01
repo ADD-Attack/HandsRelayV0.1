@@ -1,7 +1,7 @@
 """Tests for the packaged app's persistent gateway token (wishlist #1).
 
 The token load-or-create shipped on the PC line 2026-10-17 (patch:
-token load-or-create at ~/.muse-relay-v2/gateway-token.txt) but was
+token load-or-create at ~/.HandsRelayV0.1/gateway-token.txt) but was
 missing from the v3 tree, whose _start_all minted a fresh token per
 launch — a swap would have locked the agent out until the owner
 pasted the new token from the window. V3-R3 ports the shipped
@@ -14,7 +14,7 @@ implementation verbatim; these checks pin the behavior:
 
 Runs on Linux like test_app.py: tkinter / pyautogui / winreg are
 stubbed before the app module is loaded from its file path, and HOME
-is redirected to a temp dir so the real ~/.muse-relay-v2 is untouched.
+is redirected to a temp dir so the real ~/.HandsRelayV0.1 is untouched.
 
     python3 test_gateway_token.py
 """
@@ -45,7 +45,7 @@ sys.modules["pyautogui"] = _fake_gui
 sys.modules["winreg"] = types.ModuleType("winreg")
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-APP_PATH = os.path.join(HERE, "muse_relay_v2_app.py")
+APP_PATH = os.path.join(HERE, "hands_relay_v2_app.py")
 
 spec = importlib.util.spec_from_file_location("relay_app_under_test", APP_PATH)
 appmod = importlib.util.module_from_spec(spec)
@@ -64,8 +64,8 @@ def run():
         os.environ["HOME"] = tmp
         try:
             path = appmod._gateway_token_path()
-            check("path is under HOME/.muse-relay-v2",
-                  path == os.path.join(tmp, ".muse-relay-v2", "gateway-token.txt"))
+            check("path is under HOME/.HandsRelayV0.1",
+                  path == os.path.join(tmp, ".HandsRelayV0.1", "gateway-token.txt"))
 
             token1, origin1 = appmod._load_or_create_gateway_token()
             check("first call origin is created", origin1 == "created")

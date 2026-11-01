@@ -1,7 +1,7 @@
 """Human-like pointer system + resting-hand planning (wishlist #24, #28,
 #29, #30) — pure, Windows-free, deterministic for a seeded rng.
 
-Everything here PLANS; nothing injects input. muse_relay_hands.py owns
+Everything here PLANS; nothing injects input. hands_relay_hands.py owns
 the pyautogui calls, the input mutex instance, the self-input ledger
 instance and the resting-hand thread, and feeds them through these planners.
 Every random parameter is drawn per call from the rng passed in, so no

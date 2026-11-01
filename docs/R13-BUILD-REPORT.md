@@ -10,7 +10,7 @@ Commit `1933b3b58748d86caf81dca85b99435896c6f1e1`: frozen contracts and reproduc
 
 Added `_held_failure_diagnostics` in `services/gateway/app.py` and used it for terminal held failures. Fresh allowlisted diagnostics exclude arbitrary upstream prose and payloads. Count bounds match hands' 1,000,000-byte request ceiling; contradictory count pairs are omitted, not repaired. Added privacy, mutation, terminal/no-replay, owner/lock and count-boundary tests.
 
-Commands (Python = `/home/openclaw/.venvs/muse-relay-r13/bin/python`):
+Commands (Python = `/home/openclaw/.venvs/HandsRelay-r13/bin/python`):
 
 - `python -m pytest -q tests/test_f4_diagnostics_reference.py tests/test_relay_fix_acceptance.py -k 'count_evidence or partial or retains or omits or rejects_wrong or p04'`: 15 passed, 20 deselected.
 - `python -m pytest -q --ignore=tests/test_relay_fix_acceptance.py`: 243 passed, 1 skipped.
@@ -23,9 +23,9 @@ Added `classify_act_outcome` and `_attempt_act` in `services/gateway/app.py`; di
 
 Commands:
 
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q tests/test_relay_fix_acceptance.py -k 'p02 or p03 or p04 or p05'`: 8 passed, 13 deselected.
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q tests/test_r13_outcomes.py tests/test_f4_diagnostics_reference.py tests/test_relay_fix_acceptance.py -k 'not p01 and not p06 and not p07 and not p08 and not p09 and not p10 and not p11 and not p12 and not p13'`: 63 passed, 13 deselected.
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q --ignore=tests/test_relay_fix_acceptance.py`: **1 failed, 283 passed, 1 skipped**.
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q tests/test_relay_fix_acceptance.py -k 'p02 or p03 or p04 or p05'`: 8 passed, 13 deselected.
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q tests/test_r13_outcomes.py tests/test_f4_diagnostics_reference.py tests/test_relay_fix_acceptance.py -k 'not p01 and not p06 and not p07 and not p08 and not p09 and not p10 and not p11 and not p12 and not p13'`: 63 passed, 13 deselected.
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q --ignore=tests/test_relay_fix_acceptance.py`: **1 failed, 283 passed, 1 skipped**.
 - `git diff --check`: clean.
 
 ### Named blocker: contradictory frozen regression contract
@@ -41,26 +41,26 @@ Unresolved: whether the operator authorizes an explicit, reviewed retirement/upd
 Muse's explicit operator authorization resolves the conflict in favor of F3. In `tests/test_v3r2_remaining.py::test_pump_maps_2xx_yield_and_everything_else`, lines 205–206 and 211 only: malformed no-`ok` yield evidence now asserts `unknown-outcome` and no pending payload (previously `held` and retained payload); malformed offset-mismatch evidence now asserts `unknown-outcome` (previously `failed`). Stimuli and every other assertion in that file are unchanged. Authority: framework F3, Required behavior, and operator's specific supersession order. This is not authorization to change further legacy expectations.
 
 Rerun commands:
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q --ignore=tests/test_relay_fix_acceptance.py`: 284 passed, 1 skipped.
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q tests/test_relay_fix_acceptance.py -k 'p02 or p03 or p04 or p05'`: 8 passed, 13 deselected.
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q --ignore=tests/test_relay_fix_acceptance.py`: 284 passed, 1 skipped.
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q tests/test_relay_fix_acceptance.py -k 'p02 or p03 or p04 or p05'`: 8 passed, 13 deselected.
 
 ## B03 — receipt states and visibility
 
 Added schema-valid `aborted-owner` / `aborted` classification; missing receipt lookup now says `unavailable`, never nonexecution. UI state chips/colors explicitly represent unknown, abort, in-flight and unavailable. README documents injection-vs-effect, no replay, and volatile retention. Existing dashboard snapshot/count/feed functions preserve arbitrary state strings without remapping; new tests exercise those actual functions, polling/list endpoints and eviction. Browser interaction remains unverified; source feed has no replay control.
 
 Commands:
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q --ignore=tests/test_relay_fix_acceptance.py`: 288 passed, 1 skipped.
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q tests/test_relay_fix_acceptance.py -k 'p02 or p03 or p04 or p05'`: 8 passed, 13 deselected.
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q --ignore=tests/test_relay_fix_acceptance.py`: 288 passed, 1 skipped.
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q tests/test_relay_fix_acceptance.py -k 'p02 or p03 or p04 or p05'`: 8 passed, 13 deselected.
 
 No further pre-existing test expectations changed. Source map: gateway `classify_act_outcome`, `act_queued_get`; UI `STATE_CHIP`, `STATE_COLOR`; existing model `_snapshot_receipt_rows`, `summarize_receipts`, `receipt_state_counts` audited unchanged.
 
 ## B04 — receiver-local execution lease protocol
 
-Hands now provides authenticated `/execution/capabilities` and `/execution/lease` (version 1). `_execution_mint` stores opaque, bounded-lifetime boot-bound identities with canonical private operation digests; `_execution_check` validates operation, boot, consumption and equality expiry and atomically consumes one start. Capacity refuses rather than evicting live identities. No mint/check operation injects input. Source map: these helpers/routes in `hands/muse_relay_hands.py`; gateway negotiation and side-effect consumption are B05/B07 integration work.
+Hands now provides authenticated `/execution/capabilities` and `/execution/lease` (version 1). `_execution_mint` stores opaque, bounded-lifetime boot-bound identities with canonical private operation digests; `_execution_check` validates operation, boot, consumption and equality expiry and atomically consumes one start. Capacity refuses rather than evicting live identities. No mint/check operation injects input. Source map: these helpers/routes in `hands/hands_relay_hands.py`; gateway negotiation and side-effect consumption are B05/B07 integration work.
 
 Commands:
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q tests/test_r13_execution_leases.py`: 11 passed.
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q --ignore=tests/test_relay_fix_acceptance.py`: 299 passed, 1 skipped.
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q tests/test_r13_execution_leases.py`: 11 passed.
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q --ignore=tests/test_relay_fix_acceptance.py`: 299 passed, 1 skipped.
 
 Fixtures cover independent receiver clock, wall-time jumps, adversarial transit delay/equality expiry, wrong boot/token/operation, invalid lifetimes, authenticated minting, and a two-thread atomic-start race. Old-hands gateway refusal is tested with B05, where capability negotiation is wired. No packaged runtime claim.
 
@@ -71,8 +71,8 @@ Gateway `_prepare_queued_execution` negotiates authenticated version/boot, pins 
 Protocol adapter: the fixture in `tests/test_relay_fix_acceptance.py` now supplies a successful fake `_prepare_queued_execution` result so P02/P03 still inject lost/malformed **action** responses, after the new prerequisite handshake. No stimulus or expected outcome was changed. This follows the framework's explicit new-seam adapter allowance; it is not a further legacy expectation supersession. Real handshake behavior has separate B05 tests.
 
 Commands:
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q tests/test_r13_gateway_leases.py tests/test_relay_fix_acceptance.py -k 'not p06 and not p07 and not p08 and not p09 and not p10 and not p11 and not p12 and not p13'`: 16 passed, 12 deselected.
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q --ignore=tests/test_relay_fix_acceptance.py`: 306 passed, 1 skipped.
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q tests/test_r13_gateway_leases.py tests/test_relay_fix_acceptance.py -k 'not p06 and not p07 and not p08 and not p09 and not p10 and not p11 and not p12 and not p13'`: 16 passed, 12 deselected.
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q --ignore=tests/test_relay_fix_acceptance.py`: 306 passed, 1 skipped.
 
 Tests cover old/incompatible hands (zero POSTs), same lease through yields, one concurrent dispatch, eviction during dispatch, and a slow first receipt expiring the second. Receipt-only helper fixtures without monotonic metadata use supplied time plus measured monotonic elapsed duration; actual queued receipts always carry receiver-independent local monotonic deadlines. First-effect enforcement remains B07.
 
@@ -81,9 +81,9 @@ Tests cover old/incompatible hands (zero POSTs), same lease through yields, one 
 `_input.check` revalidates owner activity, desktop lock, expected foreground and lease after mutex acquisition/hand-travel. Failed `__enter__` releases on every exception, and never resets resting state. `_InputRefused` has a Flask handler. Focus and clipboard-set now use the shared mutex. First-effect/after-preparatory-wait consumption and multistep guards remain B07/B11 work; this checkpoint does not claim them complete.
 
 Commands:
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q tests/test_relay_fix_acceptance.py -k p07`: 3 passed, 18 deselected.
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q tests/test_r13_guarded_input.py tests/test_relay_fix_acceptance.py -k 'lock_change or p07'`: 13 passed, 18 deselected. Includes all ten side-effect routes, no input/ramp reset on post-acquisition lock change, and lock acquisition by a different thread after refusal.
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q --ignore=tests/test_relay_fix_acceptance.py`: **1 failed, 315 passed, 1 skipped**.
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q tests/test_relay_fix_acceptance.py -k p07`: 3 passed, 18 deselected.
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q tests/test_r13_guarded_input.py tests/test_relay_fix_acceptance.py -k 'lock_change or p07'`: 13 passed, 18 deselected. Includes all ten side-effect routes, no input/ramp reset on post-acquisition lock change, and lock acquisition by a different thread after refusal.
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q --ignore=tests/test_relay_fix_acceptance.py`: **1 failed, 315 passed, 1 skipped**.
 - `git diff --check`: clean.
 
 ### Further named conflict — R7.2 single-door idle-probe expectation
@@ -97,17 +97,17 @@ This is distinct from self-triggered idle *after* injection, which must continue
 Muse authorized the minimal F2 harness correction. Only `tests/test_r72_fixround.py` lines 271 and 288 changed: simulated zero idle now begins after `s.written` contains an injected key, instead of on the second probe regardless of input; the exact-one-probe assertion becomes at least two (door and post-acquisition revalidation). The full-text successful-typing assertion and remainder of the file are unchanged. Authority: F2's required guard revalidation under input access and explicit operator authorization. This preserves the anti-self-trigger regression purpose.
 
 Reruns:
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q --ignore=tests/test_relay_fix_acceptance.py`: 316 passed, 1 skipped.
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q tests/test_r13_guarded_input.py tests/test_relay_fix_acceptance.py -k 'lock_change or p07'`: 13 passed, 18 deselected.
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q --ignore=tests/test_relay_fix_acceptance.py`: 316 passed, 1 skipped.
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q tests/test_r13_guarded_input.py tests/test_relay_fix_acceptance.py -k 'lock_change or p07'`: 13 passed, 18 deselected.
 
 ## B07 — first-side-effect timing checkpoint; review gate BLOCKED
 
 Hands `_input.before_effect`, `_before_effect`, and `_inject` move lease consumption and resting-act start to the injection boundary, after preparatory waits. Every side-effect route calls this boundary, including focus and clipboard-set; clipboard reads may precede it but mutations may not. Once started, lease expiry does not abort completion. Mouse/button releases remain unguarded cleanup. Native click-down exceptions release the button. A refused paste cannot trigger typing fallback or an unnecessary clipboard restore. Existing type partial-count lock checkpoints remain in the typing implementation pending B10; first-effect timing applies to both typing paths now.
 
 Commands:
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q tests/test_r13_first_effect.py`: 15 passed. Covers all ten routes expiring during acquisition, attention delay, clipboard read delay, valid start followed by expiry, consumed-lease replay, no-effect versus injecting context/ramp behavior, and cleanup after a native press exception.
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q tests/test_relay_fix_acceptance.py -k 'p01 or p02 or p03 or p04 or p05 or p07'`: 12 passed, 9 deselected.
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q --ignore=tests/test_relay_fix_acceptance.py`: **1 failed, 330 passed, 1 skipped**.
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q tests/test_r13_first_effect.py`: 15 passed. Covers all ten routes expiring during acquisition, attention delay, clipboard read delay, valid start followed by expiry, consumed-lease replay, no-effect versus injecting context/ramp behavior, and cleanup after a native press exception.
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q tests/test_relay_fix_acceptance.py -k 'p01 or p02 or p03 or p04 or p05 or p07'`: 12 passed, 9 deselected.
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q --ignore=tests/test_relay_fix_acceptance.py`: **1 failed, 330 passed, 1 skipped**.
 - `git diff --check`: clean.
 
 ### Further named conflict — R11 context entry treated as a real act
@@ -122,7 +122,7 @@ Proposed minimal harness resolution: add one simulated movement via `_inject` in
 Muse authorized the minimal setup change in `tests/test_r11_resting_watch.py::test_real_act_resets_the_global_ramp`. Added one simulated movement, `hands._inject(hands.pyautogui.moveTo, 1, 2)`, inside the existing input context and before the existing intensity assertions. No expected values changed. Authority: B07/F1 first-side-effect timing; a context that never injects must not reset the resting ramp.
 
 Reruns after the setup change:
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q --ignore=tests/test_relay_fix_acceptance.py`: 331 passed, 1 skipped (prior interrupted session).
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q --ignore=tests/test_relay_fix_acceptance.py`: 331 passed, 1 skipped (prior interrupted session).
 
 
 ## B08 — held target policy
@@ -130,8 +130,8 @@ Reruns after the setup change:
 Locked queued acts without a caller target now settle `failed` / `target_unknown` and drop the payload. A locked response cannot contribute a foreground pin. Caller `expect_focus`, including `process_instance`, is preserved. Capability pinning skips `locked: true` and includes a process instance when supplied. `_focus_matches` fails closed when a requested process instance is missing, stopped, or different. Focus re-enumerates the selected window under input access and returns `target_unavailable` if it disappeared before activation.
 
 Commands:
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q tests/test_r13_targets.py`: 3 passed.
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q --ignore=tests/test_relay_fix_acceptance.py`: 334 passed, 1 skipped.
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q tests/test_r13_targets.py`: 3 passed.
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q --ignore=tests/test_relay_fix_acceptance.py`: 334 passed, 1 skipped.
 
 P06 is covered by `test_p06_locked_without_target_is_terminal`. Windows packaged focus races remain unverified.
 
@@ -141,8 +141,8 @@ P06 is covered by `test_p06_locked_without_target_is_terminal`. Windows packaged
 `_RestingHand._move` samples `_owner_input_snapshot` before every sub-step. A changed owner-event count stops before the next pointer move, even when the pointer is still where the glide expects it. A missing snapshot does not invent owner activity. This does not yet disable resting motion on hook death or cover every non-rest route; those remain the rest of B09/B10/B11.
 
 Commands:
-- `RELAY_REPO_ROOT=$PWD /home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q tests/test_relay_fix_acceptance.py -k p11`: 2 passed, 19 deselected.
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q tests/test_r11_resting_watch.py tests/test_r12_rest_float.py`: 40 passed.
+- `RELAY_REPO_ROOT=$PWD /home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q tests/test_relay_fix_acceptance.py -k p11`: 2 passed, 19 deselected.
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q tests/test_r11_resting_watch.py tests/test_r12_rest_float.py`: 40 passed.
 
 
 ## B09 — owner observation service
@@ -150,8 +150,8 @@ Commands:
 `_observe_owner_counter` keeps the physical-event count and the monotonic time of the latest count change across actions. A hook event inside the yield window yields even when a self-input span covers the idle timestamp. A quiet hook does not treat a span-explained idle tick as owner activity; an unexplained idle change still yields. `mark_owner_coverage_degraded` stops new resting glides and `/state` reports `owner_coverage: degraded` without claiming reliable discrimination. Ordinary injections record their tick span. Tick rollover stays on the existing modular `tick_diff`. A mid-glide exception still truncates the provisional span.
 
 Commands:
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q tests/test_r13_owner_service.py tests/test_relay_fix_acceptance.py -k 'recent_owner or degraded_coverage or tick_rollover or p07 or p11'`: 8 passed, 16 deselected.
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q --ignore=tests/test_relay_fix_acceptance.py`: 337 passed, 1 skipped.
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q tests/test_r13_owner_service.py tests/test_relay_fix_acceptance.py -k 'recent_owner or degraded_coverage or tick_rollover or p07 or p11'`: 8 passed, 16 deselected.
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q --ignore=tests/test_relay_fix_acceptance.py`: 337 passed, 1 skipped.
 
 
 ## B10 — guarded typing and narrow paste fallback
@@ -180,9 +180,9 @@ Only the assertions that encoded that old boundary were changed. No other assert
 Paste falls back to keys only when the clipboard is missing or `set_text` fails before a mutation. After a mutation, owner/lock/focus before Ctrl+V does not paste and does not type. Restore runs only if the clipboard still holds the placed value. A chord that may have been sent returns `paste_uncertain` with no `chars_typed` and no typing fallback, and releases Ctrl and V.
 
 Commands:
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q tests/test_r13_guarded_typing.py tests/test_r72_fixround.py tests/test_v3r4.py::test_type_aborts_midway_when_owner_activates tests/test_v3r4.py::test_type_completes_when_owner_stays_away tests/test_v3r2_remaining.py::test_paste_restores_clipboard_when_hotkey_raises tests/test_r13_first_effect.py`: 50 passed.
-- `RELAY_REPO_ROOT=$PWD /home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q tests/test_relay_fix_acceptance.py -k 'p12 or p11'`: 4 passed, 17 deselected.
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q --ignore=tests/test_relay_fix_acceptance.py`: 346 passed, 1 skipped.
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q tests/test_r13_guarded_typing.py tests/test_r72_fixround.py tests/test_v3r4.py::test_type_aborts_midway_when_owner_activates tests/test_v3r4.py::test_type_completes_when_owner_stays_away tests/test_v3r2_remaining.py::test_paste_restores_clipboard_when_hotkey_raises tests/test_r13_first_effect.py`: 50 passed.
+- `RELAY_REPO_ROOT=$PWD /home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q tests/test_relay_fix_acceptance.py -k 'p12 or p11'`: 4 passed, 17 deselected.
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q --ignore=tests/test_relay_fix_acceptance.py`: 346 passed, 1 skipped.
 
 
 ## B11 — ordinary input and resting-motion guards
@@ -190,20 +190,20 @@ Commands:
 Pointer steps, scroll chunks, key presses, hotkey chords, break chords, drag segments, and focus activation sample owner, lock, and focus before each unit. The first blocked unit still yields or returns the existing focus refusal. After any side effect the result is `input_aborted`, which is not a yield, and the held-diagnostic allow-list retains that code. A direct click or hotkey that fails after the native call releases the button or every chord key. Drag still releases a button that went down. Resting sub-steps also stop on lock or degraded coverage before the next move. No native absolute-pointer injection was added, so this package does not depend on B15.
 
 Commands:
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q tests/test_r13_guarded_motion.py`: 7 passed.
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q --ignore=tests/test_relay_fix_acceptance.py`: 353 passed, 1 skipped.
-- `RELAY_REPO_ROOT=$PWD /home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q tests/test_relay_fix_acceptance.py -k 'p11 or p12 or p07'`: 7 passed, 14 deselected.
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q tests/test_r13_guarded_motion.py`: 7 passed.
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q --ignore=tests/test_relay_fix_acceptance.py`: 353 passed, 1 skipped.
+- `RELAY_REPO_ROOT=$PWD /home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q tests/test_relay_fix_acceptance.py -k 'p11 or p12 or p07'`: 7 passed, 14 deselected.
 
 
 ## B12 — epoch store and exclusive gateway authority
 
-`services/gateway/epoch_store.py` is the authority store. The gateway process loads it from `bind_claim_authority()` before `serve`. The directory is `MUSE_RELAY_STATE_DIR`, otherwise `services/gateway/state` beside the gateway module. `authority.lock` is an OS exclusive lock and dies with the process. `epoch.json` and `high-water.json` move together by replace-and-fsync. Epochs are positive integers, not UUIDs or wall times.
+`services/gateway/epoch_store.py` is the authority store. The gateway process loads it from `bind_claim_authority()` before `serve`. The directory is `HANDS_RELAY_STATE_DIR`, otherwise `services/gateway/state` beside the gateway module. `authority.lock` is an OS exclusive lock and dies with the process. `epoch.json` and `high-water.json` move together by replace-and-fsync. Epochs are positive integers, not UUIDs or wall times.
 
 A second live process is denied. A killed holder lets the next process allocate a strictly higher epoch. A one-step crash (epoch file published, marker not yet updated) is adopted and not reused. Disk failure, a truncated file, a missing half of the pair, and a file rewritten to an older epoch fail closed. The store does not start again at zero. The only reset is `recover("reset-pairing")`. Claim message sequencing stays on the existing push counter until B13 binds messages to this epoch; this package does not pretend those pushes are ordered by the new epoch yet.
 
 Commands:
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q tests/test_r13_epoch_store.py`: 3 passed.
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q --ignore=tests/test_relay_fix_acceptance.py`: 356 passed, 1 skipped.
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q tests/test_r13_epoch_store.py`: 3 passed.
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q --ignore=tests/test_relay_fix_acceptance.py`: 356 passed, 1 skipped.
 
 
 ## B13 — hands epoch validation and receiver-timed permits
@@ -262,9 +262,9 @@ index c76f20e..1bce8c2 100644
 `hands/test_process_wait.py` also copies the new sibling `claim_sync.py` into its temporary import directory, the same way it already copies `motion.py`. No assertion there changed.
 
 Commands:
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q tests/test_r13_claim_sync.py`: 6 passed.
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q --ignore=tests/test_relay_fix_acceptance.py`: 362 passed, 1 skipped.
-- `RELAY_REPO_ROOT=$PWD /home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q tests/test_relay_fix_acceptance.py -k p09`: 1 passed, 20 deselected.
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q tests/test_r13_claim_sync.py`: 6 passed.
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q --ignore=tests/test_relay_fix_acceptance.py`: 362 passed, 1 skipped.
+- `RELAY_REPO_ROOT=$PWD /home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q tests/test_relay_fix_acceptance.py -k p09`: 1 passed, 20 deselected.
 
 
 ## B14 — coalesced claim reconciliation
@@ -274,9 +274,9 @@ One worker sends the latest claim snapshot. A failed or rejected acknowledgement
 A refresh of the same `claim_id` after the permit lapses does not move `last_act_end` and does not clear `owner_stopped`. A permit that was set and has expired stops the next resting sub-step. A direct glide with no permit is unchanged.
 
 Commands:
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q tests/test_r13_reconcile.py`: 5 passed.
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q --ignore=tests/test_relay_fix_acceptance.py`: 367 passed, 1 skipped.
-- `RELAY_REPO_ROOT=$PWD /home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q tests/test_relay_fix_acceptance.py -k p09`: 1 passed, 20 deselected (with the B13 setup).
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q tests/test_r13_reconcile.py`: 5 passed.
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q --ignore=tests/test_relay_fix_acceptance.py`: 367 passed, 1 skipped.
+- `RELAY_REPO_ROOT=$PWD /home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q tests/test_relay_fix_acceptance.py -k p09`: 1 passed, 20 deselected (with the B13 setup).
 
 
 ## B15 — virtual-surface capture
@@ -321,13 +321,13 @@ Authority named by the ruling: P13 and the framework section the ruling asked to
 
 The full hunk is `git diff 95ddb94 -- hands/test_capture_realism.py`. The lines above are the expectation change. The recorders exist so this check can see the virtual-surface call without editing `_screenshot` or any other check.
 
-`hands/requirements-capture.txt` names the backend: `pillow==13.0.0` (the Linux simulation) and `pyautogui`. `build_app.bat` installs that file, hidden-imports `PIL.ImageGrab`, and also bundles `hands/claim_sync.py`. The hands module loads that sibling by path; without it a packaged exe cannot start. `hands/build_muse_relay.bat` installs from the same requirements file.
+`hands/requirements-capture.txt` names the backend: `pillow==13.0.0` (the Linux simulation) and `pyautogui`. `build_app.bat` installs that file, hidden-imports `PIL.ImageGrab`, and also bundles `hands/claim_sync.py`. The hands module loads that sibling by path; without it a packaged exe cannot start. `hands/build_hands_relay.bat` installs from the same requirements file.
 
 Commands:
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q tests/test_r13_capture.py tests/test_relay_fix_acceptance.py::test_p13_secondary_capture_uses_virtual_origin`: 9 passed.
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python hands/test_capture_realism.py`: the virtual-surface check passes. One untouched check still fails: `jitter=false: single legacy write, no per-char sleeps`. B10 types per character for both jitter values. That check was not edited.
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q --ignore=tests/test_relay_fix_acceptance.py`: 375 passed, 1 skipped.
-- `RELAY_REPO_ROOT=$PWD /home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q tests/test_relay_fix_acceptance.py`: 20 passed, 1 failed. The failure is P08, `last_success_at` is absent. Gateway watcher code was not modified. That field is B17. P13 passed in this run.
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q tests/test_r13_capture.py tests/test_relay_fix_acceptance.py::test_p13_secondary_capture_uses_virtual_origin`: 9 passed.
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python hands/test_capture_realism.py`: the virtual-surface check passes. One untouched check still fails: `jitter=false: single legacy write, no per-char sleeps`. B10 types per character for both jitter values. That check was not edited.
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q --ignore=tests/test_relay_fix_acceptance.py`: 375 passed, 1 skipped.
+- `RELAY_REPO_ROOT=$PWD /home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q tests/test_relay_fix_acceptance.py`: 20 passed, 1 failed. The failure is P08, `last_success_at` is absent. Gateway watcher code was not modified. That field is B17. P13 passed in this run.
 
 Unresolved: F7-C packaged Windows evidence is not part of this package. No executable was built here, and no DPI measurement was taken.
 
@@ -345,9 +345,9 @@ Hands response headers `X-Screen-Width`, `X-Screen-Height`, `X-Screen-Monitor`, 
 F7-C is not closed. No Windows package was built in this session, so there is no executable hash, no measured topology, no DPI mode, and no image dimensions from a packaged build at 100/125/150 percent. The required mode, recorded in `capture_virtual_surface`, is Per-Monitor-V2. `hands/requirements-capture.txt` pins `pillow==13.0.0` for the Linux simulation only. pyautogui is named there and is not installed as a distribution in the test environment; the tests inject a fake. Simulation cannot close this gate.
 
 Commands:
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q tests/test_r13_capture_gateway.py`: 4 passed.
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q --ignore=tests/test_relay_fix_acceptance.py`: 379 passed, 1 skipped.
-- `RELAY_REPO_ROOT=$PWD /home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q tests/test_relay_fix_acceptance.py`: 20 passed, 1 failed. The failure is still P08 (`last_success_at` is absent). No acceptance assertion was edited. P13 passed.
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q tests/test_r13_capture_gateway.py`: 4 passed.
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q --ignore=tests/test_relay_fix_acceptance.py`: 379 passed, 1 skipped.
+- `RELAY_REPO_ROOT=$PWD /home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q tests/test_relay_fix_acceptance.py`: 20 passed, 1 failed. The failure is still P08 (`last_success_at` is absent). No acceptance assertion was edited. P13 passed.
 
 Unresolved: F7-C packaged Windows evidence, and P08's watcher success timestamp (B17).
 
@@ -365,9 +365,9 @@ The dashboard still lists watcher names as contact. `observations` is separate. 
 Poll interval P=3 and request deadline T=5 are the external watcher's acceptance settings. No watcher process is in this repo, so those numbers were not copied onto the gateway's own hands timeout.
 
 Commands:
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q tests/test_r13_watcher_freshness.py tests/test_r11_resting_watch.py tests/test_relay_fix_acceptance.py::test_p08_failed_fetch_preserves_last_success_but_marks_error`: 35 passed.
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q --ignore=tests/test_relay_fix_acceptance.py`: 386 passed, 1 skipped.
-- `RELAY_REPO_ROOT=$PWD /home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q tests/test_relay_fix_acceptance.py`: 21 passed.
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q tests/test_r13_watcher_freshness.py tests/test_r11_resting_watch.py tests/test_relay_fix_acceptance.py::test_p08_failed_fetch_preserves_last_success_but_marks_error`: 35 passed.
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q --ignore=tests/test_relay_fix_acceptance.py`: 386 passed, 1 skipped.
+- `RELAY_REPO_ROOT=$PWD /home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q tests/test_relay_fix_acceptance.py`: 21 passed.
 
 ## B18 — not started
 
@@ -398,7 +398,7 @@ Symbols that are not in either input: an OS lock, a heartbeat, a failure record,
 `watchers/watch-live.py` and `watchers/watch-live-laptop.py` are the candidate entries. Defaults keep each input's URL, home, and file names. `WATCH_HOME` is how the tests avoid `~/workspace`.
 
 Command:
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q tests/test_r13_watch_lock.py`: 2 passed (W01, both variants).
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q tests/test_r13_watch_lock.py`: 2 passed (W01, both variants).
 
 
 ## B18 publication
@@ -408,7 +408,7 @@ Command:
 A crash after `full`, `display`, or `meta` leaves the previous manifest. A crash after the manifest rename exposes the new generation with matching hashes. `WATCH_DISABLE_LOCK=1` is the fault-injection build for W02, not the normal entry.
 
 Commands:
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q tests/test_r13_watch_lock.py tests/test_r13_watch_publish.py`: 14 passed. W01 still passes. W02 and W03 pass on both variants.
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q tests/test_r13_watch_lock.py tests/test_r13_watch_publish.py`: 14 passed. W01 still passes. W02 and W03 pass on both variants.
 
 
 ## B18 telemetry
@@ -418,7 +418,7 @@ Commands:
 The gateway integration uses B17. A validated `/v1/screen?watcher=abraham` sets the gateway success time. A later pause heartbeats `/v1/watch` and does not move that time. The local status is `paused`, not fresh.
 
 Command:
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q tests/test_r13_watch_telemetry.py`: 5 passed. W04 and W05 on both variants, plus the B17 heartbeat check.
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q tests/test_r13_watch_telemetry.py`: 5 passed. W04 and W05 on both variants, plus the B17 heartbeat check.
 
 
 ## B18 consumer
@@ -430,7 +430,7 @@ W07 launches `watchers/watch-live.py` and `watchers/watch-live-laptop.py`. The p
 W08's local rule refuses a fresh screenshot when the configured application log has not grown. Two polls three seconds apart, with the log advanced between them, are accepted. This is not the supervised workflow. TunerStudio was not running. Watcher 38 is not closed.
 
 Command:
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q tests/test_r13_watch_consumer.py tests/test_r13_watch_lock.py`: 8 passed.
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q tests/test_r13_watch_consumer.py tests/test_r13_watch_lock.py`: 8 passed.
 
 ## Wrap-up
 
@@ -442,8 +442,8 @@ Candidate `v3-r13-candidate`.
 - B18 consumer: this commit
 
 Commands after the consumer tests:
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q --ignore=tests/test_relay_fix_acceptance.py`: 411 passed, 1 skipped.
-- `RELAY_REPO_ROOT=$PWD /home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q tests/test_relay_fix_acceptance.py`: 21 passed.
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q --ignore=tests/test_relay_fix_acceptance.py`: 411 passed, 1 skipped.
+- `RELAY_REPO_ROOT=$PWD /home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q tests/test_relay_fix_acceptance.py`: 21 passed.
 
 Still open, not claimed:
 - Watcher 38. W01–W07 passed here on both supplied variants. W08's supervised application-log workflow did not run.
@@ -465,6 +465,6 @@ The operator ruling the same evening authorized the three checks that hardcoded 
 No other assertion was edited.
 
 Commands:
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q tests/test_r11_resting_watch.py tests/test_r12_rest_float.py`: 40 passed.
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q --ignore=tests/test_relay_fix_acceptance.py`: 411 passed, 1 skipped.
-- `RELAY_REPO_ROOT=$PWD /home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q tests/test_relay_fix_acceptance.py`: 21 passed.
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q tests/test_r11_resting_watch.py tests/test_r12_rest_float.py`: 40 passed.
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q --ignore=tests/test_relay_fix_acceptance.py`: 411 passed, 1 skipped.
+- `RELAY_REPO_ROOT=$PWD /home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q tests/test_relay_fix_acceptance.py`: 21 passed.

@@ -33,7 +33,7 @@ def motion():
 
 @pytest.fixture(scope="module")
 def hands():
-    return _load("hands/muse_relay_hands.py", "r9_motion_hands")
+    return _load("hands/hands_relay_hands.py", "r9_motion_hands")
 
 
 # ============================================================ path physics

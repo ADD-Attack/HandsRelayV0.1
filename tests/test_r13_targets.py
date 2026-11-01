@@ -36,7 +36,7 @@ def test_caller_expectation_survives_locked_hold(monkeypatch):
     assert g._pending_payloads[rid]["expect_focus"]["process_instance"] == "A"
 
 def test_focus_rechecks_selected_window_and_survives_other_foreground(monkeypatch):
-    h = load("hands/muse_relay_hands.py")
+    h = load("hands/hands_relay_hands.py")
     h.SHARED_SECRET = "s"
     windows = [{"_hwnd": 5, "title": "Target", "pid": 10, "focused": False}]
     calls = {"n": 0}
