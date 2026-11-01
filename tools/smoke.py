@@ -1,4 +1,4 @@
-"""Muse Relay v2 — end-to-end smoke check (WP0).
+"""HandsRelay v2 — end-to-end smoke check (WP0).
 
 One command, a pass/fail line per check. Designed for the owner's Windows
 PC; runs anywhere Python + the service requirements are installed.
@@ -166,7 +166,7 @@ def main(argv=None):
                     help="skip the harmless key press")
     ap.add_argument("--hands-url", default="http://127.0.0.1:5000")
     ap.add_argument("--hands-secret-file",
-                    default=os.path.join(os.path.expanduser("~"), ".muse-relay-v2",
+                    default=os.path.join(os.path.expanduser("~"), ".HandsRelayV0.1",
                                          "hands-secret.txt"))
     ap.add_argument("--gateway-port", type=int, default=5010)
     ap.add_argument("--parser-port", type=int, default=5011)
@@ -284,7 +284,7 @@ def main(argv=None):
             report.skipped("screenshot via /v1/screen", why)
             report.skipped("harmless action via /v1/act", why)
             print("\nHands not running: start the packaged app (Start) or "
-                  "hands/muse_relay_hands.py, then rerun.")
+                  "hands/hands_relay_hands.py, then rerun.")
             return finish(report)
 
         r = requests.get(f"{gateway}/v1/screen", headers=auth, timeout=30)

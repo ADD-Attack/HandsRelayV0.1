@@ -1,5 +1,5 @@
 """
-Muse Relay -- let Muse drive your Windows mouse/keyboard, with your consent.
+HandsRelay -- let Muse drive your Windows mouse/keyboard, with your consent.
 
 One small window. No terminals.
 
@@ -8,7 +8,7 @@ WHAT IT DOES
     your network can reach it directly).
   - Opens a Cloudflare quick tunnel and shows the URL in the window.
   - Uses a strong per-machine secret: generated on first run and stored
-    at %USERPROFILE%\\.muse-relay-v2\\hands-secret.txt -- the same file
+    at %USERPROFILE%\\.HandsRelayV0.1\\hands-secret.txt -- the same file
     the packaged v2 app owns -- so restarts, the gateway, and this app
     keep agreeing on it. Delete that file to rotate the secret.
   - You paste the URL + secret to Muse in chat when you want a session.
@@ -93,12 +93,12 @@ PORT = 5000
 def _load_or_create_secret() -> str:
     """Per-machine hands secret, shared with the packaged v2 app.
 
-    Stored at ~/.muse-relay-v2/hands-secret.txt (created on first run,
+    Stored at ~/.HandsRelayV0.1/hands-secret.txt (created on first run,
     0600 where the OS honors it; the value is never logged). Falls back
     to a per-launch secret if the file cannot be read or written.
     """
     path = os.path.join(
-        os.path.expanduser("~"), ".muse-relay-v2", "hands-secret.txt"
+        os.path.expanduser("~"), ".HandsRelayV0.1", "hands-secret.txt"
     )
     try:
         with open(path, "r", encoding="utf-8") as fh:
@@ -434,8 +434,8 @@ LOCKOUT_SECONDS = 300  # ...5 minutes (restart the app to clear early)
 _BASE_DIR = os.path.dirname(
     os.path.abspath(sys.executable if getattr(sys, "frozen", False) else __file__)
 )
-_CONFIG_PATH = os.path.join(_BASE_DIR, "muse_relay_config.json")
-_LOG_FILE = os.path.join(_BASE_DIR, "muse_relay.log")
+_CONFIG_PATH = os.path.join(_BASE_DIR, "hands_relay_config.json")
+_LOG_FILE = os.path.join(_BASE_DIR, "hands_relay.log")
 
 
 def _load_config() -> dict:
@@ -457,7 +457,7 @@ def _save_config(cfg: dict) -> None:
 _cfg = _load_config()
 ALERT_TOPIC = str(_cfg.get("ntfy_topic") or "").strip()
 if not ALERT_TOPIC:
-    ALERT_TOPIC = "muse-relay-" + secrets_mod.token_hex(6)
+    ALERT_TOPIC = "HandsRelay-" + secrets_mod.token_hex(6)
     _cfg["ntfy_topic"] = ALERT_TOPIC
     _save_config(_cfg)
 
@@ -509,7 +509,7 @@ def _record_failure() -> None:
             )
             file_log("LOCKOUT triggered (10 bad secrets inside 10 minutes)")
             alert_phone(
-                "Muse Relay LOCKOUT",
+                "HandsRelay LOCKOUT",
                 "Someone just made 10 bad secret guesses at your relay. "
                 "Authentication is paused for 5 minutes.",
             )
@@ -668,7 +668,7 @@ class RelayApp:
         self.stopping = False
         self.server_failed = False
 
-        root.title("Muse Relay")
+        root.title("HandsRelay")
         root.resizable(False, False)
         self._set_icon()
 

@@ -1,4 +1,4 @@
-"""Muse Relay v2 — gateway service.
+"""HandsRelay v2 — gateway service.
 
 The agent-facing API. Owns authentication (per-deployment token, constant-time
 compare, failed-guess lockout) and routes control requests to the Windows

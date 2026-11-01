@@ -1,6 +1,6 @@
-# Muse Relay v2 — execution brief for Claude Opus 5.5
+# HandsRelay v2 — execution brief for Claude Opus 5.5
 
-_You are Claude Opus 5.5, working in the repo `ADD-Attack/muse-relay-v2`.
+_You are Claude Opus 5.5, working in the repo `ADD-Attack/HandsRelayV0.1`.
 Your job: complete the work packages below, in order, testing as you go,
 and commit your work. This file is your spec — if something here conflicts
 with the code, trust the code for current state and this file for intent,
@@ -176,7 +176,7 @@ experience is manual firewall surgery does not "just work."
 
 On Start, the app must ensure its gateway port (5010) is reachable:
 1. After the gateway reports healthy on loopback, probe for the inbound
-   firewall rule the app owns (a named rule, e.g. "Muse Relay v2 —
+   firewall rule the app owns (a named rule, e.g. "HandsRelay v2 —
    gateway 5010", TCP inbound, port-scoped, Private profile). If it is
    missing, offer its creation in the UI: one button that requests
    elevation (UAC) and creates it with `New-NetFirewallRule` (or
@@ -188,7 +188,7 @@ On Start, the app must ensure its gateway port (5010) is reachable:
    "Remove firewall rule" control in the same window — not on Stop or
    exit, which may be temporary.
 2b. The same check must also scan for enabled inbound BLOCK rules
-   whose program/name matches the relay executable (e.g. "muse relay
+   whose program/name matches the relay executable (e.g. "HandsRelay
    v2.exe"): Windows creates these silently when a firewall prompt
    for the app is dismissed, a block rule overrides any allow rule,
    and — the actual 2026-10-15 root cause, found only after the port

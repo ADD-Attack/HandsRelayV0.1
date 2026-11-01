@@ -15,7 +15,7 @@ reported as SKIP with the reason, exit 0).
 
 1. Install deps: `pip install -r services\gateway\requirements.txt -r services\parser\requirements.txt`
 2. With the packaged app **closed**, start only the standalone hands
-   (`python hands\muse_relay_hands.py`), then run `python tools\smoke.py`.
+   (`python hands\hands_relay_hands.py`), then run `python tools\smoke.py`.
    Expect PASS on all checks, including "screenshot via /v1/screen" and
    "harmless action via /v1/act".
 3. Close the hands and run `python tools\smoke.py` again. Expect the two

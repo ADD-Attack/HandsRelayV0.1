@@ -1,9 +1,9 @@
-"""Muse Relay v2 — packaged single-window app (Windows).
+"""HandsRelay v2 — packaged single-window app (Windows).
 
 One icon, one button: the window opens idle, and pressing Start brings
 up all three relay services in this one process —
 
-  * hands   on 127.0.0.1:5000  (hands/muse_relay_hands.py, headless: no
+  * hands   on 127.0.0.1:5000  (hands/hands_relay_hands.py, headless: no
     separate window, no tunnel — localhost only, as designed)
   * gateway on :5010           (the agent-facing API)
   * parser  on :5011           (screen parsing)
@@ -12,14 +12,14 @@ The status lines show each service; the log shows what happened.
 
 Secrets:
   * The gateway token persists per machine at
-    %USERPROFILE%\\.muse-relay-v2\\gateway-token.txt — generated on first
+    %USERPROFILE%\\.HandsRelayV0.1\\gateway-token.txt — generated on first
     run, reused after that (delete the file to rotate). It is shown in
     the window with a Copy button so the operator can hand it to the
     agent once; after that, the same token keeps working across
     relaunches, which is what lets the agent keep hands while the
     owner is away from the PC.
   * The hands secret is owned by this app and persists per machine at
-    %USERPROFILE%\\.muse-relay-v2\\hands-secret.txt — generated on first
+    %USERPROFILE%\\.HandsRelayV0.1\\hands-secret.txt — generated on first
     run, reused after that (delete the file to rotate). It is never
     logged or displayed. The app hands the same value to the gateway
     and to the in-process hands, which is the whole point of bundling
@@ -56,7 +56,7 @@ HANDS_URL = "http://127.0.0.1:5000"
 POLL_MS = 1000  # also drives the hands control-state line
 
 SERVICE_FILES = {
-    "hands": "hands/muse_relay_hands.py",
+    "hands": "hands/hands_relay_hands.py",
     "parser": "services/parser/app.py",
     "gateway": "services/gateway/app.py",
 }
@@ -82,7 +82,7 @@ def _icon_path():
 
 
 def _hands_secret_path():
-    return os.path.join(os.path.expanduser("~"), ".muse-relay-v2", "hands-secret.txt")
+    return os.path.join(os.path.expanduser("~"), ".HandsRelayV0.1", "hands-secret.txt")
 
 
 def _load_or_create_hands_secret():
@@ -116,7 +116,7 @@ def _load_or_create_hands_secret():
 
 
 def _gateway_token_path():
-    return os.path.join(os.path.expanduser("~"), ".muse-relay-v2", "gateway-token.txt")
+    return os.path.join(os.path.expanduser("~"), ".HandsRelayV0.1", "gateway-token.txt")
 
 
 def _load_or_create_gateway_token():
@@ -195,7 +195,7 @@ class RelayApp:
     # ---------- UI ----------
     def _build_ui(self):
         root = self.root
-        root.title("Muse Relay v2")
+        root.title("HandsRelay v2")
         root.geometry("580x480")
         root.minsize(520, 420)
 
@@ -356,7 +356,7 @@ class RelayApp:
             probe.settimeout(0.5)
             if probe.connect_ex(("127.0.0.1", port)) == 0:
                 hint = (
-                    " (an old v1 Muse Relay window counts — close it)"
+                    " (an old v1 HandsRelay window counts — close it)"
                     if name == "hands"
                     else ""
                 )
@@ -368,7 +368,7 @@ class RelayApp:
                 self.set_status(name, f"{label} (:{port}): already running elsewhere")
                 return
         try:
-            module = _load_service(f"muse_relay_v2_{name}", SERVICE_FILES[name])
+            module = _load_service(f"hands_relay_v2_{name}", SERVICE_FILES[name])
         except Exception as exc:
             self.log_line(f"ERROR: could not load the {name} service: {exc}")
             self.set_status(name, f"{label} (:{port}): failed to load")

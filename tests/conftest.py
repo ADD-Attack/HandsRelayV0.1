@@ -103,8 +103,8 @@ def hands(fake_gui, tmp_path, monkeypatch):
     """The real hands module, stubbed I/O, fake clock, no watcher threads."""
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
-    src = os.path.join(ROOT, "hands", "muse_relay_hands.py")
-    dst = tmp_path / "muse_relay_hands.py"
+    src = os.path.join(ROOT, "hands", "hands_relay_hands.py")
+    dst = tmp_path / "hands_relay_hands.py"
     shutil.copy(src, dst)
     module = _load("hands_under_test", str(dst))
     clock = FakeClock()

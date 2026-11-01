@@ -1,10 +1,10 @@
-# Muse Relay v2
+# HandsRelay v2
 
 Let a personal AI agent operate a Windows PC — screenshots,
 mouse, keyboard — with a security posture designed for leaving it reachable
 while the owner is away from home.
 
-v2 is a rebuild of the single-file Muse Relay around three parts:
+v2 is a rebuild of the single-file HandsRelay around three parts:
 
 | Part | Runs where | What it does |
 | --- | --- | --- |
@@ -20,10 +20,10 @@ what order): [docs/ROADMAP.md](docs/ROADMAP.md).
 One icon, one button. Build once:
 
 ```
-build_app.bat   :: builds "Muse Relay v2.exe"
+build_app.bat   :: builds "HandsRelay v2.exe"
 ```
 
-Then just double-click **Muse Relay v2.exe** and press **Start**. The one
+Then just double-click **HandsRelay v2.exe** and press **Start**. The one
 window runs all three parts in-process — hands on 127.0.0.1:5000, gateway on
 :5010, parser on :5011 — with a status line for each. **Stop** (or closing the
 window) stops everything. No other app is needed: the v1 relay is retired,
@@ -33,12 +33,12 @@ the gateway is the only surface an agent talks to).
 Secrets in the packaged app:
 
 - The **gateway token** persists per machine at
-  `%USERPROFILE%\.muse-relay-v2\gateway-token.txt` — generated on first run,
+  `%USERPROFILE%\.HandsRelayV0.1\gateway-token.txt` — generated on first run,
   reused after that (delete the file to rotate it). It is shown in the window
   with a Copy button so the operator can hand it to the agent once; the same
   token then keeps working across relaunches.
 - The **hands secret** is owned by the app and persists per machine at
-  `%USERPROFILE%\.muse-relay-v2\hands-secret.txt` — generated on first run,
+  `%USERPROFILE%\.HandsRelayV0.1\hands-secret.txt` — generated on first run,
   reused after that (delete the file to rotate it). The app feeds the same
   value to the gateway and the hands, so the two can never disagree about
   it the way the old two-app setup could.
@@ -86,7 +86,7 @@ hand checks say so as SKIP instead of failing.
 
 ```
 python tools\smoke.py                # hands at 127.0.0.1:5000, secret from
-                                      # %USERPROFILE%\.muse-relay-v2\hands-secret.txt
+                                      # %USERPROFILE%\.HandsRelayV0.1\hands-secret.txt
 python tools\smoke.py --use-running  # packaged app already running: set
                                       # $env:RELAY_GATEWAY_TOKEN first
 python tools\smoke.py --mock-hands   # no real hands (any OS)
@@ -99,7 +99,7 @@ Exit code 0 means every executed check passed.
 ## Hands (Windows)
 
 The hands run **inside the packaged app** (above) — same Flask routes from
-`hands/muse_relay_hands.py`, served headless on 127.0.0.1:5000 by the app
+`hands/hands_relay_hands.py`, served headless on 127.0.0.1:5000 by the app
 process, with the app-owned persistent secret described above.
 
 For a split deployment (services run separately, e.g. under Docker), the
@@ -107,7 +107,7 @@ standalone hands app is still available:
 
 ```
 cd hands
-build_muse_relay.bat   :: builds "Muse Relay.exe" (v1 hands, carried forward)
+build_hands_relay.bat   :: builds "HandsRelay.exe" (v1 hands, carried forward)
 ```
 
 Standalone, the hands app works as it always did: per-session generated
@@ -173,11 +173,11 @@ app logs a warning). Guided check on the PC: `python tools\takeover_check.py`.
 - Nothing listens publicly by default. Preferred transport is Tailscale
   Serve (tailnet-only); a public tunnel is a fallback, never the design.
 - The gateway token is stored per machine in the packaged app
-  (`%USERPROFILE%\.muse-relay-v2\gateway-token.txt`), generated on first run
+  (`%USERPROFILE%\.HandsRelayV0.1\gateway-token.txt`), generated on first run
   and reused across launches so an agent holding it is not locked out by a
   relaunch; delete the file to rotate it. The hands secret in the packaged app
   is the other stored credential:
-  app-owned, kept in the user's profile (`%USERPROFILE%\.muse-relay-v2\`),
+  app-owned, kept in the user's profile (`%USERPROFILE%\.HandsRelayV0.1\`),
   and only ever used on the localhost gateway↔hands link — it never
   crosses the network. (The standalone hands app still uses a per-session
   secret instead.)
