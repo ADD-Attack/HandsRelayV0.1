@@ -86,10 +86,10 @@ Work/relay-framework-resumed-20261022/test_relay_fix_acceptance.py:302: in test_
 E   AssertionError: assert not True
 E    +  where True = claim_held(10000.0)
 E    +    where claim_held = <acceptance_15._RestingHand object at 0x7f0eb2472350>.claim_held
-E    +      where <acceptance_15._RestingHand object at 0x7f0eb2472350> = <module 'acceptance_15' from '/home/john/Work/relay-review-20261022/hands/muse_relay_hands.py'>._resting
+E    +      where <acceptance_15._RestingHand object at 0x7f0eb2472350> = <module 'acceptance_15' from '/home/john/Work/relay-review-20261022/hands/hands_relay_hands.py'>._resting
 E    +    and   10000.0 = monotonic()
 E    +      where monotonic = <acceptance_15._RestingHand object at 0x7f0eb2472350>._clock
-E    +        where <acceptance_15._RestingHand object at 0x7f0eb2472350> = <module 'acceptance_15' from '/home/john/Work/relay-review-20261022/hands/muse_relay_hands.py'>._resting
+E    +        where <acceptance_15._RestingHand object at 0x7f0eb2472350> = <module 'acceptance_15' from '/home/john/Work/relay-review-20261022/hands/hands_relay_hands.py'>._resting
 ___________ test_p11_owner_keyboard_stops_remaining_rest_glide[True] ___________
 Work/relay-framework-resumed-20261022/test_relay_fix_acceptance.py:338: in test_p11_owner_keyboard_stops_remaining_rest_glide
     assert landed is None

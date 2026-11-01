@@ -1,5 +1,5 @@
 @echo off
-title Build Muse Relay v2 App
+title Build HandsRelay v2 App
 cd /d %~dp0
 
 rem Install PyInstaller if it is not there yet.
@@ -49,13 +49,13 @@ if errorlevel 1 (
 rem The app loads the three service modules from files at runtime, so
 rem bundle them inside the exe: hands, gateway, and parser. The exe then
 rem runs standalone from any folder — one icon, one Start button.
-python -m PyInstaller --onefile --windowed --name "Muse Relay v2" --icon relay.ico --hidden-import pyautogui --hidden-import webview --hidden-import PIL.ImageGrab --add-data "ui;ui" --add-data "relay.ico;." --add-data "services\gateway\app.py;services\gateway" --add-data "services\parser\app.py;services\parser" --add-data "hands\muse_relay_hands.py;hands" --add-data "hands\motion.py;hands" --add-data "hands\claim_sync.py;hands" muse_relay_v2_app.py
+python -m PyInstaller --onefile --windowed --name "HandsRelay v2" --icon relay.ico --hidden-import pyautogui --hidden-import webview --hidden-import PIL.ImageGrab --add-data "ui;ui" --add-data "relay.ico;." --add-data "services\gateway\app.py;services\gateway" --add-data "services\parser\app.py;services\parser" --add-data "hands\hands_relay_hands.py;hands" --add-data "hands\motion.py;hands" --add-data "hands\claim_sync.py;hands" hands_relay_v2_app.py
 if errorlevel 1 (
   echo Build failed. This window will close.
   pause
   exit /b 1
 )
 
-copy /Y "dist\Muse Relay v2.exe" "Muse Relay v2.exe" >nul
+copy /Y "dist\HandsRelay v2.exe" "HandsRelay v2.exe" >nul
 echo.
-echo Built: %CD%\Muse Relay v2.exe
+echo Built: %CD%\HandsRelay v2.exe

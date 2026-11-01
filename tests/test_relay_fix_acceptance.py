@@ -85,7 +85,7 @@ def gateway(monkeypatch, clock):
 def hands(monkeypatch, clock):
     for name in ("pyautogui", "tkinter", "tkinter.messagebox"):
         monkeypatch.setitem(sys.modules, name, FakeModule(name))
-    module = load("hands/muse_relay_hands.py")
+    module = load("hands/hands_relay_hands.py")
     module.SHARED_SECRET = "acceptance-secret"
     monkeypatch.setattr(module, "time", clock)
     monkeypatch.setattr(module, "_probe_lock_state", lambda: (False, 30.0))
@@ -313,7 +313,7 @@ def test_p09_gateway_restart_release_reaches_surviving_hands(gateway, hands, mon
 
 
 def test_p10_countdown_refresh_still_decreases(monkeypatch, hands):
-    module = load("muse_relay_v2_app.py")
+    module = load("hands_relay_v2_app.py")
     claim = {"holder": "test", "purpose": "countdown", "expires_at": 1000}
     before = module.build_dashboard_model(None, claim, [], None, {}, 100)["claim"]
     after = module.build_dashboard_model(None, claim, [], None, {}, 105)["claim"]

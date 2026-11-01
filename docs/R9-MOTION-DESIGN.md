@@ -2,10 +2,10 @@
 
 Wishlist #24, #28, #29, #30, built as ONE system: `hands/motion.py` (pure
 planners, seeded-rng deterministic, no input injection) + integration in
-`hands/muse_relay_hands.py` (the only place pyautogui is called).
+`hands/hands_relay_hands.py` (the only place pyautogui is called).
 
 ## Flags (constraint d)
-| Flag | Default | Env (wins) | Config key (`muse_relay_config.json`) |
+| Flag | Default | Env (wins) | Config key (`hands_relay_config.json`) |
 |---|---|---|---|
 | Human motion | ON | `HANDS_HUMAN_MOTION` | `human_motion` |
 | Jiggler | OFF | `HANDS_JIGGLER` | `jiggler_enabled` (also `POST /jiggler {enabled}`; merge-written) |

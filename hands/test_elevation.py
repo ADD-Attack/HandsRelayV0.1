@@ -7,7 +7,7 @@ app window's dialog calls. Nothing is ever launched here.
 
     python3 test_elevation.py
 
-Note: importing the hands module may create muse_relay_config.json
+Note: importing the hands module may create hands_relay_config.json
 next to it (its first-run alert-topic behaviour); the test deletes it
 again in cleanup and it must never be committed.
 """
@@ -27,7 +27,7 @@ _fake_tk.Tk = object
 sys.modules.setdefault("tkinter", _fake_tk)
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import muse_relay_hands as hands  # noqa: E402
+import hands_relay_hands as hands  # noqa: E402
 
 HEADERS = {"X-Secret": None}  # filled in after import
 
@@ -137,7 +137,7 @@ def run():
         # Import side effects: never leave (or commit) the hands
         # config / log files the module may have created.
         base = os.path.dirname(os.path.abspath(__file__))
-        for name in ("muse_relay_config.json", "muse_relay.log"):
+        for name in ("hands_relay_config.json", "hands_relay.log"):
             try:
                 os.remove(os.path.join(base, name))
             except OSError:

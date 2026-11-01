@@ -151,7 +151,7 @@ def test_paused_watcher_is_not_fresh(monkeypatch):
 
 
 def test_dashboard_shows_observation_separately_from_contact():
-    path = Path(__file__).resolve().parents[1] / "muse_relay_v2_app.py"
+    path = Path(__file__).resolve().parents[1] / "hands_relay_v2_app.py"
     spec = importlib.util.spec_from_file_location("b17_app", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

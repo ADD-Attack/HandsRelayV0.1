@@ -11,7 +11,7 @@ ROUTES = [('move', {'x': 1, 'y': 2}), ('click', {'x': 1, 'y': 2}),
 
 @pytest.fixture
 def rig(monkeypatch):
-    spec = importlib.util.spec_from_file_location('b07_hands', Path(__file__).resolve().parents[1] / 'hands/muse_relay_hands.py')
+    spec = importlib.util.spec_from_file_location('b07_hands', Path(__file__).resolve().parents[1] / 'hands/hands_relay_hands.py')
     h = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(h)
     h.SHARED_SECRET = 'secret'

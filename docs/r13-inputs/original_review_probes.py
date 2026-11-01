@@ -21,8 +21,8 @@ def load(rel, name):
 
 load('tests/conftest.py', 'review_fakes')
 gw = load('services/gateway/app.py', 'review_gw')
-hands = load('hands/muse_relay_hands.py', 'review_hands')
-app = load('muse_relay_v2_app.py', 'review_app')
+hands = load('hands/hands_relay_hands.py', 'review_hands')
+app = load('hands_relay_v2_app.py', 'review_app')
 AUTH = {'X-Relay-Token': 'review-token'}
 HAUTH = {'X-Secret': hands.SHARED_SECRET}
 out = {}

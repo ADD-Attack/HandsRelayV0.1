@@ -5,7 +5,7 @@ import pytest
 
 def load():
     spec = importlib.util.spec_from_file_location(
-        "b10_hands", Path(__file__).resolve().parents[1] / "hands/muse_relay_hands.py")
+        "b10_hands", Path(__file__).resolve().parents[1] / "hands/hands_relay_hands.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     module.SHARED_SECRET = "s"

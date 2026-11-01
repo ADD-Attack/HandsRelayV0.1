@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @pytest.fixture(scope="module")
 def hands():
-    path = ROOT / "hands/muse_relay_hands.py"
+    path = ROOT / "hands/hands_relay_hands.py"
     spec = importlib.util.spec_from_file_location("r9_display_hands", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)

@@ -1,7 +1,7 @@
 """Tests for the R7 fix round — Astra's review of the R6 stack.
 
 Astra returned DEPLOY-NO-GO on R6 with 2 High / 3 Medium / 2 Low
-findings, all in the dashboard wiring of muse_relay_v2_app.py. These
+findings, all in the dashboard wiring of hands_relay_v2_app.py. These
 tests pin the fixes:
 
   High 1  a dashboard-build failure inside the health poll must not
@@ -55,8 +55,8 @@ sys.modules["pyautogui"] = _fake_gui
 
 
 def _load_app():
-    path = os.path.join(os.path.dirname(__file__), "..", "muse_relay_v2_app.py")
-    name = "muse_relay_v2_app_r7"
+    path = os.path.join(os.path.dirname(__file__), "..", "hands_relay_v2_app.py")
+    name = "hands_relay_v2_app_r7"
     spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module

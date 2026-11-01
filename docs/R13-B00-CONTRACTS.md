@@ -10,8 +10,8 @@
 
 Using Python 3.12.3, pytest 9.1.1, Pillow 13.0.0, Flask 3.1.3, and requests 2.34.2 in an isolated environment:
 
-- `RELAY_REPO_ROOT=$PWD /home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q tests/test_relay_fix_acceptance.py` — **18 failed, 3 passed** (expected R12 failure backlog).
-- `/home/openclaw/.venvs/muse-relay-r13/bin/python -m pytest -q` — **18 failed, 232 passed, 1 skipped**. The 232 passes include the three passing acceptance controls; the pre-existing suite baseline is therefore **229 passed, 1 skipped**.
+- `RELAY_REPO_ROOT=$PWD /home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q tests/test_relay_fix_acceptance.py` — **18 failed, 3 passed** (expected R12 failure backlog).
+- `/home/openclaw/.venvs/HandsRelay-r13/bin/python -m pytest -q` — **18 failed, 232 passed, 1 skipped**. The 232 passes include the three passing acceptance controls; the pre-existing suite baseline is therefore **229 passed, 1 skipped**.
 
 ## Shared outcome contract
 

@@ -21,7 +21,7 @@ H = {"X-UI-Key": KEY, **HOST}
 
 @pytest.fixture(scope="module")
 def appmod():
-    spec = importlib.util.spec_from_file_location("r9_gui_app", ROOT / "muse_relay_v2_app.py")
+    spec = importlib.util.spec_from_file_location("r9_gui_app", ROOT / "hands_relay_v2_app.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
@@ -56,7 +56,7 @@ def _drain(relay):
 # ------------------------------------------------------------ one GUI
 
 def test_app_has_no_tk_and_no_autostart_of_services(appmod, relay):
-    src = (ROOT / "muse_relay_v2_app.py").read_text(encoding="utf-8")
+    src = (ROOT / "hands_relay_v2_app.py").read_text(encoding="utf-8")
     assert "import tkinter" not in src and "from tkinter" not in src
     assert not hasattr(appmod, "tk")
     _drain(relay)
@@ -90,13 +90,13 @@ def test_foreign_host_rejected(client):
 
 def test_index_and_assets_served_with_csp(client):
     r = client.get("/", headers=HOST)
-    assert r.status_code == 200 and b"Muse Relay" in r.data
+    assert r.status_code == 200 and b"HandsRelay" in r.data
     csp = r.headers["Content-Security-Policy"]
     assert "script-src 'self'" in csp and "unsafe-inline" not in csp
     assert r.headers["Cache-Control"] == "no-store"
     for name in ("app.js", "app.css"):
         assert client.get(f"/assets/{name}", headers=HOST).status_code == 200
-    assert client.get("/assets/../muse_relay_v2_app.py", headers=HOST).status_code == 404
+    assert client.get("/assets/../hands_relay_v2_app.py", headers=HOST).status_code == 404
 
 
 def test_page_has_no_inline_script_or_handlers_and_js_never_uses_innerhtml():
@@ -211,7 +211,7 @@ def test_diagnostics_before_and_after_model(appmod, client, relay):
     assert client.post("/api/diagnostics", headers=H).status_code == 409
     relay._last_model = appmod.build_dashboard_model(None, None, None, None, {}, 0)
     body = client.post("/api/diagnostics", headers=H).get_json()
-    assert body["ok"] and "Muse Relay diagnostics" in body["text"]
+    assert body["ok"] and "HandsRelay diagnostics" in body["text"]
 
 
 def test_model_carries_r9_desktop_fields(appmod):

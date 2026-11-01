@@ -1,4 +1,4 @@
-"""Muse Relay v2 — gateway service.
+"""HandsRelay v2 — gateway service.
 
 The agent-facing API. Owns authentication (per-deployment token, constant-time
 compare, failed-guess lockout) and routes control requests to the Windows
@@ -2314,7 +2314,7 @@ def bind_claim_authority(directory=None):
     """Allocate this process's epoch before any claim traffic is served.
 
     Failure is fail-closed: the process does not start. The directory is
-    the argument, else MUSE_RELAY_STATE_DIR, else services/gateway/state
+    the argument, else HANDS_RELAY_STATE_DIR, else services/gateway/state
     beside this file. The returned store stays held until release().
     """
     global _claim_authority
@@ -2323,7 +2323,7 @@ def bind_claim_authority(directory=None):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     if directory is None:
-        directory = os.environ.get("MUSE_RELAY_STATE_DIR") or os.path.join(
+        directory = os.environ.get("HANDS_RELAY_STATE_DIR") or os.path.join(
             os.path.dirname(os.path.abspath(__file__)), "state")
     store = module.EpochStore(directory)
     try:
