@@ -4,7 +4,7 @@
 Coordination 15, Input realism 16–17, Reliability 18–19).
 
 **Status 2026-10-19: the whole list is now implemented on branch `v3`
-of muse-relay-v2** (canonical repo; HEAD a8c12ff incl. V3-R1 + V3-R2,
+of HandsRelayV0.1** (canonical repo; HEAD a8c12ff incl. V3-R1 + V3-R2,
 PUSHED to ADD-Attack/Cadre refs/heads/v3, verified 16:17 CDT).
 #1 done 2026-10-17; #14 in f40dc5a; the rest in V3-P2..P6 commits
 (95f99f6, e765781, 9a6caea, ab67c18, 192d8c3 + integration commits),
@@ -25,7 +25,7 @@ above is the implementation of record), and the phase-1 landing cron
 has been cancelled — no landing/phase-1 job exists in the scheduler
 (verified 2026-10-19 14:08 CDT autonomy scan, cron.list).
 
-Capabilities Muse wants added to Muse Relay v2 (hands = actuation via the
+Capabilities Muse wants added to HandsRelay v2 (hands = actuation via the
 gateway, eyes = screenshot/parser). Muse adds an entry whenever real work hits
 a limitation, with the date and the incident that motivated it. Christopher
 reviews and picks; nothing here is a promise or a schedule.
@@ -33,7 +33,7 @@ reviews and picks; nothing here is a promise or a schedule.
 ## Hands (actuation)
 
 1. **Persistent gateway token** — DONE 2026-10-17 (patch: token load-or-create
-   at `~/.muse-relay-v2/gateway-token.txt`, mirroring the hands secret).
+   at `~/.HandsRelayV0.1/gateway-token.txt`, mirroring the hands secret).
    Motivated by: the per-launch token locked the agent out after any
    relaunch, breaking "hands stay up the entire time I'm at work."
 2. **File-drop op** — gateway op to write a small file (agent → a named PC
@@ -91,7 +91,7 @@ reviews and picks; nothing here is a promise or a schedule.
     the display is asleep, so the agent knows actions won't land before
     trying them.
 14. **Conditional hash endpoint** — IMPLEMENTED 2026-10-19 on the local
-    `v3` branch of muse-relay-v2 (commit f40dc5a, not yet pushed):
+    `v3` branch of HandsRelayV0.1 (commit f40dc5a, not yet pushed):
     `GET /v1/screen/hash` with `mask_bottom` + `stable=1` (two samples
     ~0.65 s apart, per-pixel minimum — phase-independent), and an ETag /
     If-None-Match 304 on `/v1/screen`. 11 synthetic tests pass; live
@@ -273,6 +273,6 @@ A type op aborted by the owner-provenance guard (owner became active — the saf
 The R11 resting hand (claim held + agent idle: pointer float, 1–3 px steps capped 4 px from rest, ramp to full at 1.5 s) does not hover or drift on the real desktop — the owner's corrected observation: "it's not really hovering, it's teleporting a few pixels here and there." Each float step lands as an instant move-to-point (snap, hold still, snap), with no path between positions. Wanted: continuous interpolated motion along a path — route the resting float through the human-like motion system (#24/#29: eased paths, velocity continuity, Perlin/wind drift from #30) so the pointer travels the 1–3 px instead of snapping them; a resting hand settles and breathes. Keep the R11 behavioral contract exactly (starts after an agent act, owner input overrides instantly, no disable timeout, claim-held + agent-idle only) — this item is motion quality only.
 
 ## #37 — Rename the line v3 → v4, with a full reference sweep (Christopher, 2026-10-21 08:32)
-The relay product line is renamed from v3 to v4 (effective with the R12 round). The immediate cause: the live folder on Abraham is still named muse-relay-v3-r7-1 — a fossil from the R7.1 deploy that every later in-place swap reused — so the name on disk disagrees with the binary inside it (currently R11) and confused a version check on 2026-10-21. Scope: the folder/install name (muse-relay-v4-…), the app's displayed/reported version identity, the LAN share target path, docs and the wishlist itself. SWEEP REQUIREMENT (owner's words: "make sure all references in the GitHub reflect the v4"; per his standing migration doctrine): grep the repo for v3 references, account for EVERY hit, and leave operative text at zero v3 references — dated history and shipped-release records (R7.1/R10/R11 under the v3 line) may stand only when explicitly marked as historical. Producer-side sizing at intake: ~50 v3-string hits across md/py/json/txt in the repo (excluding .git), to be individually accounted at execution.
-NOTE on #37 (Christopher, 2026-10-21 08:35): the rename explicitly includes updating the FOLDER NAMES etc. — the install folder on Abraham (muse-relay-v3-r7-1 → its v4 name), any workspace/repo folders carrying the old version name, the SMB share name and target path that point at the install folder, and any shortcuts, scripts, service definitions, or config paths that reference the old folder names. A renamed binary inside a still-v3-named folder does not count as done; the sweep in #37 covers these paths by name.
-NOTE 2 on #37 (2026-10-21 08:48, via the Tuner session's probe): the GitHub remote (ADD-Attack/muse-relay-v2) is STALE — its main stops at 2026-10-16 (v2 era); the whole v3 line (R7.1–R11) exists only in the fleet-local repo, which is current. The remote is also source-only by design (.gitignore excludes *.exe, dist/, build/), so it has never been an exe distribution route. The #37 sweep therefore has TWO targets: bring the GitHub remote current with the local repo first, then sweep references there as well as locally — operative v3 references must come back zero in BOTH. (Scope correction owned by Muse in the main chat: the original #37 sizing grepped only the local repo after Muse misread "the GitHub" as the local repo.)
+The relay product line is renamed from v3 to v4 (effective with the R12 round). The immediate cause: the live folder on Abraham is still named HandsRelay-v3-r7-1 — a fossil from the R7.1 deploy that every later in-place swap reused — so the name on disk disagrees with the binary inside it (currently R11) and confused a version check on 2026-10-21. Scope: the folder/install name (HandsRelay-v4-…), the app's displayed/reported version identity, the LAN share target path, docs and the wishlist itself. SWEEP REQUIREMENT (owner's words: "make sure all references in the GitHub reflect the v4"; per his standing migration doctrine): grep the repo for v3 references, account for EVERY hit, and leave operative text at zero v3 references — dated history and shipped-release records (R7.1/R10/R11 under the v3 line) may stand only when explicitly marked as historical. Producer-side sizing at intake: ~50 v3-string hits across md/py/json/txt in the repo (excluding .git), to be individually accounted at execution.
+NOTE on #37 (Christopher, 2026-10-21 08:35): the rename explicitly includes updating the FOLDER NAMES etc. — the install folder on Abraham (HandsRelay-v3-r7-1 → its v4 name), any workspace/repo folders carrying the old version name, the SMB share name and target path that point at the install folder, and any shortcuts, scripts, service definitions, or config paths that reference the old folder names. A renamed binary inside a still-v3-named folder does not count as done; the sweep in #37 covers these paths by name.
+NOTE 2 on #37 (2026-10-21 08:48, via the Tuner session's probe): the GitHub remote (ADD-Attack/HandsRelayV0.1) is STALE — its main stops at 2026-10-16 (v2 era); the whole v3 line (R7.1–R11) exists only in the fleet-local repo, which is current. The remote is also source-only by design (.gitignore excludes *.exe, dist/, build/), so it has never been an exe distribution route. The #37 sweep therefore has TWO targets: bring the GitHub remote current with the local repo first, then sweep references there as well as locally — operative v3 references must come back zero in BOTH. (Scope correction owned by Muse in the main chat: the original #37 sizing grepped only the local repo after Muse misread "the GitHub" as the local repo.)

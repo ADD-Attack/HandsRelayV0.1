@@ -1,10 +1,10 @@
-# Muse Relay v2
+# HandsRelay v2
 
 Let a personal AI agent operate a Windows PC — screenshots,
 mouse, keyboard — with a security posture designed for leaving it reachable
 while the owner is away from home.
 
-v2 is a rebuild of the single-file Muse Relay around three parts:
+v2 is a rebuild of the single-file HandsRelay around three parts:
 
 | Part | Runs where | What it does |
 | --- | --- | --- |
@@ -20,10 +20,10 @@ what order): [docs/ROADMAP.md](docs/ROADMAP.md).
 One icon, one button. Build once:
 
 ```
-build_app.bat   :: builds "Muse Relay v2.exe"
+build_app.bat   :: builds "HandsRelay v2.exe"
 ```
 
-Then just double-click **Muse Relay v2.exe** and press **Start**. The one
+Then just double-click **HandsRelay v2.exe** and press **Start**. The one
 window runs all three parts in-process — hands on 127.0.0.1:5000, gateway on
 :5010, parser on :5011 — with a status line for each. **Stop** (or closing the
 window) stops everything. No other app is needed: the v1 relay is retired,
@@ -35,7 +35,7 @@ Secrets in the packaged app:
 - The **gateway token** is minted fresh every launch and shown in the window
   with a Copy button. It is never saved anywhere.
 - The **hands secret** is owned by the app and persists per machine at
-  `%USERPROFILE%\.muse-relay-v2\hands-secret.txt` — generated on first run,
+  `%USERPROFILE%\.HandsRelayV0.1\hands-secret.txt` — generated on first run,
   reused after that (delete the file to rotate it). The app feeds the same
   value to the gateway and the hands, so the two can never disagree about
   it the way the old two-app setup could.
@@ -284,7 +284,7 @@ with no model loaded, /find returns the same 501 as /parse.
 
 - **Start on login** (opt-in, off by default): the checkbox under the
   Start/Stop row in the packaged app writes/removes the value
-  `Muse Relay v2` under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`,
+  `HandsRelay v2` under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`,
   pointing at the app (the quoted executable when frozen, quoted Python
   plus the quoted script when run from source). Nothing is written until
   the owner toggles it.
@@ -302,7 +302,7 @@ Some programs only run elevated. The bridge lets an agent *request* an
 elevated launch without ever being able to cause one:
 
 - The operator pre-configures an allowlist in the hands config file
-  (`hands/muse_relay_config.json`), key `elevate_allowlist`, mapping a
+  (`hands/hands_relay_config.json`), key `elevate_allowlist`, mapping a
   request name to static `exe`/`args` strings, e.g.
   `{"notepad-elevated": {"exe": "notepad.exe", "args": ""}}`. The agent
   supplies only a name — never command text.
@@ -321,7 +321,7 @@ elevated launch without ever being able to cause one:
 ## Hands (Windows)
 
 The hands run **inside the packaged app** (above) — same Flask routes from
-`hands/muse_relay_hands.py`, served headless on 127.0.0.1:5000 by the app
+`hands/hands_relay_hands.py`, served headless on 127.0.0.1:5000 by the app
 process, with the app-owned persistent secret described above. The
 standalone hands window's Cloudflare quick tunnel is opt-in
 (`HANDS_ENABLE_TUNNEL=1`) and off by default — a public tunnel is a
@@ -332,7 +332,7 @@ standalone hands app is still available:
 
 ```
 cd hands
-build_muse_relay.bat   :: builds "Muse Relay.exe" (v1 hands, carried forward)
+build_hands_relay.bat   :: builds "HandsRelay.exe" (v1 hands, carried forward)
 ```
 
 Standalone, the hands app works as it always did: per-session generated
@@ -347,7 +347,7 @@ session secret into the gateway's `HANDS_SECRET` yourself.
   Serve (tailnet-only); a public tunnel is a fallback, never the design.
 - The gateway token is generated fresh on every launch and destroyed on
   close. The hands secret in the packaged app is the one stored credential:
-  app-owned, kept in the user's profile (`%USERPROFILE%\.muse-relay-v2\`),
+  app-owned, kept in the user's profile (`%USERPROFILE%\.HandsRelayV0.1\`),
   and only ever used on the localhost gateway↔hands link — it never
   crosses the network. (The standalone hands app still uses a per-session
   secret instead.)

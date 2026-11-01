@@ -32,7 +32,7 @@ def motion():
 
 @pytest.fixture(scope="module")
 def hands():
-    return _load("hands/muse_relay_hands.py", "r11_hands")
+    return _load("hands/hands_relay_hands.py", "r11_hands")
 
 
 @pytest.fixture(scope="module")
@@ -42,7 +42,7 @@ def gw():
 
 @pytest.fixture(scope="module")
 def appmod():
-    return _load("muse_relay_v2_app.py", "r11_app")
+    return _load("hands_relay_v2_app.py", "r11_app")
 
 
 # ============================================================ ramp profile
@@ -269,7 +269,7 @@ def test_resting_claim_route_validates(hands, rig, monkeypatch):
 
 
 def test_no_jiggler_left_in_hands(hands):
-    src = (ROOT / "hands/muse_relay_hands.py").read_text(encoding="utf-8")
+    src = (ROOT / "hands/hands_relay_hands.py").read_text(encoding="utf-8")
     assert "_Jiggler" not in src and "jiggler_enabled" not in src
     assert not hasattr(hands, "start_jiggler")
     m = (ROOT / "hands/motion.py").read_text(encoding="utf-8")
@@ -386,7 +386,7 @@ def test_mode_indicator_model(appmod):
 # ============================================================ GUI layout
 
 def test_default_window_is_the_minimum_size():
-    src = (ROOT / "muse_relay_v2_app.py").read_text(encoding="utf-8")
+    src = (ROOT / "hands_relay_v2_app.py").read_text(encoding="utf-8")
     w = int(re.search(r"width=(\d+),", src).group(1))
     h = int(re.search(r"height=(\d+),", src).group(1))
     mn = tuple(int(v) for v in re.search(r"min_size=\((\d+), (\d+)\)", src).groups())
