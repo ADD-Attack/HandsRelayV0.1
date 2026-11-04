@@ -38,10 +38,12 @@ from io import BytesIO
 import requests
 from flask import Flask, Response, jsonify, request
 
-TOKEN = os.environ.get("RELAY_GATEWAY_TOKEN", "")
-HANDS_URL = os.environ.get("HANDS_URL", "http://host.docker.internal:5000").rstrip("/")
-HANDS_SECRET = os.environ.get("HANDS_SECRET", "")
-PARSER_URL = os.environ.get("PARSER_URL", "http://parser:5011").rstrip("/")
+# Stripped (review E9): cmd's `set NAME=value && ...` keeps the trailing
+# space, which made the token and secret silently never match.
+TOKEN = os.environ.get("RELAY_GATEWAY_TOKEN", "").strip()
+HANDS_URL = os.environ.get("HANDS_URL", "http://host.docker.internal:5000").strip().rstrip("/")
+HANDS_SECRET = os.environ.get("HANDS_SECRET", "").strip()
+PARSER_URL = os.environ.get("PARSER_URL", "http://parser:5011").strip().rstrip("/")
 
 HANDS_OPS = {
     "move", "click", "type", "key", "scroll",

@@ -393,3 +393,55 @@ hands/motion.py). Needs the WebView2 runtime (present on Win10/11).
    /v1/screen/hash) gives mode chip "Watcher"; lapses 30 s after the last
    poll. timeout_seconds: 60 (per watcher) or POST /v1/watch/config
    {timeout_seconds: 60}; the GUI shows the setting read-only.
+
+## Review fixes (2026-11) — live checks owed
+
+Everything below is stub-tested off Windows (tests/test_review_*.py,
+tests/test_display_probe_no_leak.py); these steps need the real PC and
+the rebuilt "HandsRelay v2.exe". The finding IDs match
+docs/REVIEW-FIXES-2026-11.md.
+
+1. **L1 memory leak.** `set RELAY_LIVE_SOAK=1` then
+   `python -m pytest -q tests/test_windows_live_soak.py` (calls the real
+   Win32 probe behind /state 2000x; read-only) — both tests pass. Then
+   press Start in the app and leave it running for 2+ hours: Task Manager
+   → Details → "HandsRelay v2.exe" memory stays flat after warm-up. The
+   old build grew ~2-4 MB per hour from the 5 s /v1/info poll alone.
+2. **E1 focus without pywin32.** On the packaged exe, `GET /v1/windows`:
+   if every window shows `"process": null`, pywin32 is not bundled (the
+   case the fix targets). Open Notepad, minimise it, then
+   `POST /v1/act {"op": "focus", "title": "Notepad"}` → 200 and Notepad is
+   restored in front (it used to be 409 "activation failed" every time).
+3. **E1 held-act pin.** While moving the mouse yourself,
+   `POST /v1/act/queued {"op": "click", "x": .., "y": ..}` → 202; the
+   receipt shows `"pinned_foreground": true`. Switch to another window and
+   stay idle: the receipt settles `failed` (foreground changed), it does
+   not click into the new window.
+4. **E5 failsafe.** Start a slow human move (`{"op": "move", "x": 1800,
+   "y": 900}` from the far corner) and throw the pointer into a screen
+   corner: the act answers 409 `"error_code": "failsafe"` and the window
+   log shows "FAILSAFE".
+5. **E4 lockout visibility.** From another machine, send 10 requests with
+   a wrong `X-Relay-Token`: the window log shows 10 "gateway: rejected
+   request" lines and one "gateway: LOCKOUT"; the phone gets the ntfy
+   alert (topic in hands_relay_config.json). The valid token keeps working.
+6. **E2 lapsed held acts.** With the owner active, queue a long `type`
+   (hold 120) then a `key` (hold 5); go idle. The type runs; the key
+   receipt settles `refused-yielded` instead of firing after the type.
+7. **L3 self-heal.** If a self-heal restart happens ("self-heal:
+   restarting ..." in the log), Task Manager → Details → Threads for the
+   app returns to its earlier level within a few seconds (each restart
+   used to strand ~32 threads).
+8. **E3 elevation expiry.** Request an elevation and never poll it: the
+   card closes about 120 s later with "no decision made in time".
+9. **E8 parser.** Native parser only (the packaged exe cannot import
+   torch): start it without weights, run fetch_weights.py, and within 60 s
+   `GET /health` shows `"model_loaded": true` without any /parse call.
+10. **E9 scripts.** `hands\build_hands_relay.bat` builds HandsRelay.exe and
+    it starts (motion.py is bundled). `start-v2.bat` with the pasted hands
+    secret gives `/v1/info` `"hands_reachable": true` and the printed
+    token works (values no longer carry a trailing space).
+11. **I1 bind address.** The window log line "Gateway listening on ..."
+    names the bind address; with `RELAY_GATEWAY_HOST=127.0.0.1` set before
+    launching, the gateway is no longer reachable from another machine on
+    the LAN.
