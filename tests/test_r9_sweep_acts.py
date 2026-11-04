@@ -109,7 +109,11 @@ def test_pinned_retry_into_other_window_fails_not_applies(gateway, client, monke
     monkeypatch.setattr(gateway, "_forward_act", forward)
     rid = client.post("/v1/act/queued", json={"op": "click", "x": 1, "y": 2},
                       headers=TOKEN).get_json()["id"]
-    out = gateway._pump_receipt(gateway._receipts[rid], 1e12 - 1)
+    # Retry inside the hold window. (This used to pump at t=1e12, far past
+    # the deadline; since review E2 a lapsed receipt is never forwarded.)
+    receipt = gateway._receipts[rid]
+    out = gateway._pump_receipt(receipt, receipt["submitted_at"] + 1)
+    assert len(calls) == 2  # the pinned retry really was forwarded
     assert out["state"] == "failed"
 
 

@@ -26,10 +26,13 @@ import base64
 import binascii
 import hashlib
 import hmac
+import math
 import os
+import queue as _queue_mod
 import threading
 import time
 import uuid
+from collections import OrderedDict
 from io import BytesIO
 
 import requests
@@ -81,10 +84,18 @@ CLAIM_TTL_DEFAULT = 900
 CLAIM_TTL_MIN = 30
 CLAIM_TTL_MAX = 3600
 RESERVATION_GRACE = 30  # seconds the queue head alone may claim after a free-up
+# Review L2: the queue is bounded and self-cleaning. A queued holder keeps
+# its slot by re-POSTing {"queue": true} (which refreshes the entry);
+# entries not refreshed within QUEUE_ENTRY_TTL are dropped, and a head
+# whose reservation lapses unused forfeits its slot.
+CLAIM_QUEUE_MAX = 32
+QUEUE_ENTRY_TTL = 3600
+HOLDER_MAX_CHARS = 128
+PURPOSE_MAX_CHARS = 500
 
 _claim_lock = threading.RLock()
 _claim = None  # {"holder", "purpose", "since", "expires_at"} or None
-_claim_queue = []  # FIFO of {"holder", "purpose", "enqueued_at"}
+_claim_queue = []  # FIFO of {"holder", "purpose", "enqueued_at", "refreshed_at"}
 _reserved_for = None  # queue head holder with an exclusive claim window
 _reserved_until = 0.0
 
@@ -134,6 +145,7 @@ WATCHER_TIMEOUT_MAX = 60
 
 _watch_lock = threading.Lock()
 _watchers = {}  # holder -> {"holder", "since", "last_seen", "timeout_seconds"}
+WATCHERS_MAX = 64  # review L6: distinct watcher names cannot grow the table without bound
 
 
 def _initial_watcher_timeout():
@@ -163,6 +175,12 @@ def _touch_watcher(holder, timeout_seconds=None, now=None):
     now = time.time() if now is None else now
     default = _watcher_timeout_setting()
     with _watch_lock:
+        # Review L6: expire lapsed watchers on WRITE too, not only when
+        # someone reads /v1/info or /v1/watch, and cap distinct names.
+        _expire_watchers_locked(now)
+        if holder not in _watchers and len(_watchers) >= WATCHERS_MAX:
+            oldest = min(_watchers.values(), key=lambda e: e["last_seen"])
+            del _watchers[oldest["holder"]]
         entry = _watchers.get(holder)
         if entry is None or now >= entry["last_seen"] + entry["timeout_seconds"]:
             entry = {"holder": holder, "since": now, "timeout_seconds": default}
@@ -175,25 +193,48 @@ def _touch_watcher(holder, timeout_seconds=None, now=None):
         return dict(entry)
 
 
+def _expire_watchers_locked(now):
+    for holder in [h for h, e in _watchers.items() if now >= e["last_seen"] + e["timeout_seconds"]]:
+        del _watchers[holder]
+
+
 def _current_watchers(now=None):
     """Live watchers (lazy expiry), oldest first."""
     now = time.time() if now is None else now
     with _watch_lock:
-        for holder in [h for h, e in _watchers.items() if now >= e["last_seen"] + e["timeout_seconds"]]:
-            del _watchers[holder]
+        _expire_watchers_locked(now)
         return sorted((dict(e) for e in _watchers.values()), key=lambda e: e["since"])
 
 
 def _active_reservation_locked(now):
-    """Reserved holder if the grace window is still open, else None."""
+    """Reserved holder if the grace window is still open, else None.
+
+    Review L2: a reservation that lapses UNUSED also drops that holder
+    from the queue (it keeps no priority it did not use). Before, the
+    lapsed head stayed first in line and was re-reserved on every
+    release, so one abandoned session blocked every handoff for
+    RESERVATION_GRACE seconds, indefinitely.
+    """
     global _reserved_for, _reserved_until
     if _reserved_for is None:
         return None
     if now < _reserved_until:
         return _reserved_for
+    lapsed = _reserved_for
     _reserved_for = None
     _reserved_until = 0.0
+    _dequeue_locked(lapsed)
     return None
+
+
+def _prune_queue_locked(now):
+    """Drop queue entries not refreshed within QUEUE_ENTRY_TTL (review L2)."""
+    fresh = [
+        e for e in _claim_queue
+        if now - float(e.get("refreshed_at", e.get("enqueued_at", now))) < QUEUE_ENTRY_TTL
+    ]
+    if len(fresh) != len(_claim_queue):
+        _claim_queue[:] = fresh
 
 
 def _reserve_head_locked(now):
@@ -206,6 +247,7 @@ def _reserve_head_locked(now):
 
 def _current_claim_locked(now):
     global _claim
+    _prune_queue_locked(now)
     if _claim is not None and now >= float(_claim.get("expires_at", 0.0)):
         # Lazy expiry: the claim is gone, and the queue head (if any)
         # earns a reservation from this moment of discovery.
@@ -238,12 +280,31 @@ def _claim_snapshot(now=None):
 
 
 def _enqueue_locked(holder, purpose, now):
-    """Append to the FIFO queue (deduped by holder); returns 1-based position."""
+    """Append to the FIFO queue (deduped by holder); returns the 1-based
+    position, or None when the queue is full. Re-queueing an existing
+    holder keeps its position and refreshes the entry (review L2)."""
     for idx, entry in enumerate(_claim_queue):
         if entry["holder"] == holder:
+            entry["refreshed_at"] = now
             return idx + 1
-    _claim_queue.append({"holder": holder, "purpose": purpose, "enqueued_at": now})
+    if len(_claim_queue) >= CLAIM_QUEUE_MAX:
+        return None
+    _claim_queue.append(
+        {"holder": holder, "purpose": purpose, "enqueued_at": now, "refreshed_at": now}
+    )
     return len(_claim_queue)
+
+
+def _queue_full_response(claim, reserved=None):
+    body = {
+        "ok": False,
+        "error": f"claim queue is full ({CLAIM_QUEUE_MAX} waiting)",
+        "queue_full": True,
+        "claim": claim,
+    }
+    if reserved is not None:
+        body["reserved_for"] = reserved
+    return jsonify(body), 409
 
 
 def _dequeue_locked(holder):
@@ -269,13 +330,79 @@ def _reset_coordination_state():
     with _watch_lock:
         _watchers.clear()
         _watcher_timeout = None
+    with _frame_hash_cache_lock:
+        _frame_hash_cache.clear()
 
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 32 * 1024 * 1024  # 16MB file-drop is ~22MB base64; hands still caps the file at 16MB
 
+# ---------------------------------------------------------------------------
+# Owner-visible events (review E4). Gateway auth failures used to go only
+# to app.logger, which the windowed packaged app never shows, and nothing
+# alerted -- although the gateway is the one service reachable from
+# outside the PC. The packaged app drains log_queue into its window (as it
+# does for the hands) and points ALERT_HOOK at the hands' ntfy alert; a
+# standalone gateway can alert by itself via RELAY_NTFY_TOPIC.
+# ---------------------------------------------------------------------------
+LOG_QUEUE_MAX = 1000
+log_queue = _queue_mod.Queue(maxsize=LOG_QUEUE_MAX)
+ALERT_HOOK = None  # callable(title, message), set by the packaged app
+NTFY_TOPIC = os.environ.get("RELAY_NTFY_TOPIC", "").strip()
+
+
+def log_event(message):
+    """Record an owner-relevant event: app logger + the window's queue."""
+    app.logger.warning(message)
+    try:
+        log_queue.put_nowait(message)
+    except _queue_mod.Full:
+        pass  # nobody is draining (standalone): never block a request on it
+
+
+def _post_ntfy(title, message):
+    try:
+        requests.post(
+            f"https://ntfy.sh/{NTFY_TOPIC}",
+            data=message.encode("utf-8"),
+            headers={"Title": title, "Tags": "warning"},
+            timeout=10,
+        )
+    except requests.RequestException:
+        pass
+
+
+def _alert(title, message):
+    """Best-effort phone alert; never raises, never blocks the request."""
+    hook = ALERT_HOOK
+    if callable(hook):
+        try:
+            hook(title, message)
+        except Exception:
+            pass
+    elif NTFY_TOPIC:
+        threading.Thread(target=_post_ntfy, args=(title, message), daemon=True).start()
+
+
+def _json_body():
+    """The request's JSON object, or {} for a missing/invalid/non-object body.
+
+    Review E6: the old `get_json(force=True, silent=True) or {}` idiom let
+    a JSON array or string through, and the next `.get` raised a 500.
+    """
+    body = request.get_json(force=True, silent=True)
+    return body if isinstance(body, dict) else {}
+
+
+def _short(value, limit=64):
+    """A bounded printable form of a client-supplied value (review E6)."""
+    text = value if isinstance(value, str) else repr(value)
+    return text if len(text) <= limit else text[:limit] + "…"
+
+
 _fail_by_peer = {}
 _lockout_by_peer = {}
+PEER_SWEEP_AT = 256  # review L6: sweep stale per-peer entries past this many peers
 
 
 def _peer_key():
@@ -285,27 +412,42 @@ def _peer_key():
         return "-"
 
 
+def _sweep_peers_locked(now):
+    """Drop per-peer auth state that can no longer matter (review L6)."""
+    for peer in [p for p, until in _lockout_by_peer.items() if now >= until]:
+        del _lockout_by_peer[peer]
+    for peer in [p for p, ts in _fail_by_peer.items() if not ts or now - ts[-1] >= FAIL_WINDOW]:
+        del _fail_by_peer[peer]
+
+
 def _gate_decision(provided):
-    """Decide and record in one critical section.
+    """Decide and record in one critical section -> (decision, tripped).
 
     A request that already presents the valid token is never locked out,
     even when this peer is over the failure budget. Empty TOKEN fails closed.
+    tripped is True for the one failure that starts a lockout.
     """
     now = time.monotonic()
     peer = _peer_key()
     with _fail_lock:
         if TOKEN and hmac.compare_digest(provided, TOKEN):
-            return "ok"
-        if now < _lockout_by_peer.get(peer, 0.0):
-            return "locked"
-        times = _fail_by_peer.setdefault(peer, [])
-        times[:] = [t for t in times if now - t < FAIL_WINDOW]
+            return "ok", False
+        until = _lockout_by_peer.get(peer)
+        if until is not None:
+            if now < until:
+                return "locked", False
+            del _lockout_by_peer[peer]  # expired: forget it (review L6)
+        times = [t for t in _fail_by_peer.get(peer, ()) if now - t < FAIL_WINDOW]
         times.append(now)
-        if len(times) >= MAX_FAILS:
+        tripped = len(times) >= MAX_FAILS
+        if tripped:
             _lockout_by_peer[peer] = now + LOCKOUT_SECONDS
-            times.clear()
-            app.logger.warning("LOCKOUT: too many bad tokens")
-        return "bad"
+            _fail_by_peer.pop(peer, None)
+        else:
+            _fail_by_peer[peer] = times
+        if len(_fail_by_peer) + len(_lockout_by_peer) > PEER_SWEEP_AT:
+            _sweep_peers_locked(now)
+        return "bad", tripped
 
 
 @app.before_request
@@ -313,10 +455,23 @@ def gate():
     if request.path == "/health":
         return
     provided = request.headers.get("X-Relay-Token") or ""
-    decision = _gate_decision(provided)
+    decision, tripped = _gate_decision(provided)
     if decision == "locked":
         return jsonify({"ok": False, "error": "locked out"}), 429
     if decision != "ok":
+        peer = _peer_key()
+        log_event(f"rejected request to {request.path} from {peer} (bad gateway token)")
+        if tripped:
+            log_event(
+                f"LOCKOUT: {MAX_FAILS} bad gateway tokens from {peer} inside "
+                f"{FAIL_WINDOW // 60} minutes - authentication paused for "
+                f"{LOCKOUT_SECONDS // 60} minutes"
+            )
+            _alert(
+                "HandsRelay gateway LOCKOUT",
+                f"{MAX_FAILS} bad gateway-token guesses from {peer}. "
+                f"Authentication is paused for {LOCKOUT_SECONDS // 60} minutes.",
+            )
         return jsonify({"ok": False, "error": "bad token"}), 401
 
 
@@ -429,7 +584,7 @@ def watch_status():
 @app.post("/v1/watch")
 def watch_touch():
     """{holder, timeout_seconds?}: start or refresh watcher (eyes-only) mode."""
-    body = request.get_json(force=True, silent=True) or {}
+    body = _json_body()
     entry = _touch_watcher(body.get("holder"), body.get("timeout_seconds"))
     if entry is None:
         return jsonify({"ok": False, "error": "holder is required"}), 400
@@ -438,7 +593,7 @@ def watch_touch():
 
 @app.post("/v1/watch/release")
 def watch_release():
-    body = request.get_json(force=True, silent=True) or {}
+    body = _json_body()
     holder = str(body.get("holder") or "").strip()
     if not holder:
         return jsonify({"ok": False, "error": "holder is required"}), 400
@@ -451,7 +606,7 @@ def watch_release():
 def watch_config():
     """{timeout_seconds}: gateway-wide watcher timeout (30-60 s)."""
     global _watcher_timeout
-    body = request.get_json(force=True, silent=True) or {}
+    body = _json_body()
     value = body.get("timeout_seconds")
     if not isinstance(value, (int, float)) or isinstance(value, bool):
         return jsonify({"ok": False, "error": "timeout_seconds must be a number"}), 400
@@ -471,11 +626,11 @@ def hands_claim_status():
 @app.post("/v1/hands/claim")
 def hands_claim():
     global _claim, _reserved_for, _reserved_until
-    body = request.get_json(force=True, silent=True) or {}
-    holder = str(body.get("holder") or "").strip()
+    body = _json_body()
+    holder = str(body.get("holder") or "").strip()[:HOLDER_MAX_CHARS]
     if not holder:
         return jsonify({"ok": False, "error": "holder is required"}), 400
-    purpose = str(body.get("purpose") or "")
+    purpose = str(body.get("purpose") or "")[:PURPOSE_MAX_CHARS]
     ttl = _clamp_number(
         body.get("ttl_seconds", CLAIM_TTL_DEFAULT),
         CLAIM_TTL_DEFAULT,
@@ -495,6 +650,8 @@ def hands_claim():
         if current is not None:
             if want_queue:
                 position = _enqueue_locked(holder, purpose, now)
+                if position is None:
+                    return _queue_full_response(dict(current))
                 return jsonify(
                     {
                         "ok": True,
@@ -520,6 +677,8 @@ def hands_claim():
         if reserved is not None and reserved != holder:
             if want_queue:
                 position = _enqueue_locked(holder, purpose, now)
+                if position is None:
+                    return _queue_full_response(None, reserved)
                 return jsonify(
                     {
                         "ok": True,
@@ -565,8 +724,8 @@ def hands_claim():
 @app.post("/v1/hands/release")
 def hands_release():
     global _claim, _reserved_for, _reserved_until
-    body = request.get_json(force=True, silent=True) or {}
-    holder = str(body.get("holder") or "").strip()
+    body = _json_body()
+    holder = str(body.get("holder") or "").strip()[:HOLDER_MAX_CHARS]
     if not holder:
         return jsonify({"ok": False, "error": "holder is required"}), 400
     now = time.time()
@@ -630,7 +789,7 @@ def hands_release():
 def parse():
     """Forward a screenshot (JSON {"image_b64": ...}) to the parser service."""
     try:
-        r = requests.post(f"{PARSER_URL}/parse", json=request.get_json(force=True), timeout=120)
+        r = requests.post(f"{PARSER_URL}/parse", json=_json_body(), timeout=120)
     except requests.RequestException as exc:
         return jsonify({"ok": False, "error": f"parser unreachable: {exc}"}), 502
     try:
@@ -685,7 +844,7 @@ def _screen_fetch_kwargs():
 @app.post("/v1/find")
 def find():
     """Forward a find-text request to the parser service's /find."""
-    body = request.get_json(force=True, silent=True) or {}
+    body = _json_body()
     payload = {
         "image_b64": body.get("image_b64") or "",
         "text": body.get("text") or "",
@@ -748,7 +907,7 @@ def elevate():
     name; what runs is fixed by the operator's hands config, and the
     launch happens only if the person at the PC approves it there.
     """
-    body = request.get_json(force=True, silent=True) or {}
+    body = _json_body()
     return _hands_forward("POST", "/elevate", {"name": body.get("name") or ""})
 
 
@@ -813,13 +972,43 @@ class _HashUnavailable(Exception):
     """Pillow is not installed on the gateway, so frames cannot be decoded."""
 
 
-def _decode_masked(png_bytes, mask_bottom):
-    """PNG bytes -> RGB image with the bottom mask_bottom rows removed."""
+class _UndecodableFrame(Exception):
+    """The hands returned bytes that are not a decodable image (review E7)."""
+
+
+def _undecodable_response():
+    return (
+        jsonify({"ok": False, "error": "hands returned a frame that could not be decoded"}),
+        502,
+    )
+
+
+def _open_rgb(png_bytes):
+    """PNG bytes -> RGB image. _HashUnavailable without Pillow;
+    _UndecodableFrame for truncated/corrupt/non-image bytes, which used to
+    escape the routes as an HTML 500."""
     try:
         from PIL import Image
     except ImportError as exc:
         raise _HashUnavailable() from exc
-    img = Image.open(BytesIO(png_bytes)).convert("RGB")
+    try:
+        return Image.open(BytesIO(png_bytes)).convert("RGB")
+    except Exception as exc:  # UnidentifiedImageError, truncated data, bombs
+        raise _UndecodableFrame(str(exc)) from exc
+
+
+# Review I4: an unchanged screen produces byte-identical PNGs, so the masked
+# hash of a recently seen frame is reused instead of decoding it again (a
+# /v1/screen/wait long-poll re-hashes every 200 ms; /v1/screen hashes every
+# frame for its ETag). Bounded LRU keyed by the PNG's own SHA-256 + mask.
+_FRAME_HASH_CACHE_MAX = 8
+_frame_hash_cache = OrderedDict()
+_frame_hash_cache_lock = threading.Lock()
+
+
+def _decode_masked(png_bytes, mask_bottom):
+    """PNG bytes -> RGB image with the bottom mask_bottom rows removed."""
+    img = _open_rgb(png_bytes)
     mask = max(0, min(int(mask_bottom), img.height - 1))
     if mask:
         img = img.crop((0, 0, img.width, img.height - mask))
@@ -841,6 +1030,17 @@ def _frame_hash(png_a, png_b, mask_bottom, size_match_out=None):
     for stable=1 must report stable false in that case. The 3-tuple return
     is unchanged so existing unpackers keep working.
     """
+    key = None
+    if png_b is None and isinstance(png_a, (bytes, bytearray)):
+        key = (hashlib.sha256(png_a).digest(), int(mask_bottom))
+        with _frame_hash_cache_lock:
+            hit = _frame_hash_cache.get(key)
+            if hit is not None:
+                _frame_hash_cache.move_to_end(key)
+        if hit is not None:
+            if size_match_out is not None:
+                size_match_out.append(True)
+            return hit
     img_a = _decode_masked(png_a, mask_bottom)
     sizes_match = True
     if png_b is not None:
@@ -853,7 +1053,14 @@ def _frame_hash(png_a, png_b, mask_bottom, size_match_out=None):
             sizes_match = False
     if size_match_out is not None:
         size_match_out.append(sizes_match)
-    return hashlib.sha256(img_a.tobytes()).hexdigest(), img_a.width, img_a.height
+    result = (hashlib.sha256(img_a.tobytes()).hexdigest(), img_a.width, img_a.height)
+    if key is not None:
+        with _frame_hash_cache_lock:
+            _frame_hash_cache[key] = result
+            _frame_hash_cache.move_to_end(key)
+            while len(_frame_hash_cache) > _FRAME_HASH_CACHE_MAX:
+                _frame_hash_cache.popitem(last=False)
+    return result
 
 
 def _region_hash(png_bytes, region):
@@ -862,11 +1069,7 @@ def _region_hash(png_bytes, region):
     region is [x, y, w, h]; it is clamped to the frame. Returns
     (hex_digest, width, height) of the cropped region.
     """
-    try:
-        from PIL import Image
-    except ImportError as exc:
-        raise _HashUnavailable() from exc
-    img = Image.open(BytesIO(png_bytes)).convert("RGB")
+    img = _open_rgb(png_bytes)
     x, y, w, h = (int(v) for v in region)
     if w <= 0 or h <= 0:
         raise ValueError("region width/height must be positive")
@@ -906,6 +1109,11 @@ def screen():
     try:
         digest, _, _ = _frame_hash(png, None, DEFAULT_MASK_BOTTOM)
     except _HashUnavailable:
+        return resp
+    except _UndecodableFrame as exc:
+        # Review E7: serve the bytes as received, just without an ETag,
+        # rather than failing the whole route with an HTML 500.
+        app.logger.warning("screen frame not decodable for ETag: %s", exc)
         return resp
     etag = f'"{digest}"'
     resp.headers["ETag"] = etag
@@ -961,6 +1169,8 @@ def screen_hash():
             ),
             501,
         )
+    except _UndecodableFrame:
+        return _undecodable_response()
     return jsonify(
         {
             "ok": True,
@@ -1022,6 +1232,8 @@ def screen_wait():
                 ),
                 501,
             )
+        except _UndecodableFrame:
+            return _undecodable_response()
         if digest != since:
             timed_out = False
             break
@@ -1066,6 +1278,11 @@ _receipts_lock = threading.RLock()
 _receipts = {}  # id -> receipt dict, insertion-ordered (oldest first)
 _pending_payloads = {}  # receipt id -> payload, held receipts only
 _receipt_thread = None
+# Review L3: set when this module instance is retired (the packaged app's
+# self-heal reloads the gateway in-process); the retry loop then exits
+# instead of running -- and pinning the old module -- forever.
+_receipt_stop = threading.Event()
+PARAM_KEYS_MAX = 32  # review E6: receipts keep a bounded list of key names
 
 
 def _is_yield_conflict(status, result):
@@ -1124,6 +1341,8 @@ def _pump_receipt(receipt, now):
     the forward once; a non-409 answer settles the receipt (applied, or
     failed when the hands turned out unreachable), a 409 past the
     deadline settles it as refused-yielded, otherwise it stays held.
+    A receipt whose hold deadline has already passed is settled
+    refused-yielded WITHOUT forwarding (review E2).
     """
     with _receipts_lock:
         if receipt.get("state") != "held":
@@ -1135,6 +1354,17 @@ def _pump_receipt(receipt, now):
             # scrolls by the hands' defaults. Settle honestly instead.
             receipt["state"] = "expired"
             receipt["updated_at"] = now
+            return receipt
+        if now >= receipt["deadline"]:
+            # Review E2: never START a forward after the hold window. The
+            # retry loop is serial (it must preserve submission order), so
+            # a slow act -- a long type runs for minutes -- can delay the
+            # next receipt's turn past its deadline; forwarding it then
+            # would land input long after the caller's hold had lapsed.
+            # Its last attempt was a yield, so it settles refused-yielded.
+            receipt["state"] = "refused-yielded"
+            receipt["updated_at"] = now
+            _pending_payloads.pop(receipt["id"], None)
             return receipt
         payload = dict(_pending_payloads[receipt["id"]])
         op = receipt["op"]
@@ -1170,27 +1400,51 @@ def _pump_receipt(receipt, now):
         return receipt
 
 
+def _receipt_tick(clock=time.time):
+    """One pass over the held receipts, oldest first (submission order).
+
+    The clock is read again for EACH receipt, so a receipt whose turn
+    comes after a slow forward is judged against the real time then.
+    """
+    with _receipts_lock:
+        held = [r for r in _receipts.values() if r.get("state") == "held"]
+    for receipt in held:
+        if _receipt_stop.is_set():
+            return
+        try:
+            _pump_receipt(receipt, clock())
+        except Exception:
+            continue
+
+
 def _receipt_loop():
-    while True:
-        time.sleep(RECEIPT_RETRY_INTERVAL)
-        with _receipts_lock:
-            held = [r for r in _receipts.values() if r.get("state") == "held"]
-        for receipt in held:
-            try:
-                _pump_receipt(receipt, time.time())
-            except Exception:
-                continue
+    while not _receipt_stop.wait(RECEIPT_RETRY_INTERVAL):
+        _receipt_tick()
 
 
 def _ensure_receipt_thread():
     global _receipt_thread
     with _receipts_lock:
+        if _receipt_stop.is_set():
+            return  # retired module: never start a loop that pins it
         if _receipt_thread is not None and _receipt_thread.is_alive():
             return
         _receipt_thread = threading.Thread(
             target=_receipt_loop, name="queued-act-retry", daemon=True
         )
         _receipt_thread.start()
+
+
+def stop_background(timeout=2.0):
+    """Stop this module's background threads (review L3).
+
+    Called by the packaged app before it replaces this module (self-heal)
+    and on Stop. A retired module never restarts its retry loop.
+    """
+    _receipt_stop.set()
+    thread = _receipt_thread
+    if thread is not None and thread.is_alive() and thread is not threading.current_thread():
+        thread.join(timeout)
 
 
 def _forward_act(op, payload):
@@ -1201,8 +1455,9 @@ def _forward_act(op, payload):
     """
     if not HANDS_SECRET:
         return 503, {"ok": False, "error": "HANDS_SECRET not configured on gateway"}
-    if op not in HANDS_OPS:
-        return 400, {"ok": False, "error": f"unknown op: {op!r}"}
+    # Review E6: a list/dict op used to raise TypeError (unhashable) -> 500.
+    if not isinstance(op, str) or op not in HANDS_OPS:
+        return 400, {"ok": False, "error": f"unknown op: {_short(op)!r}"}
     path = HANDS_OP_PATHS.get(op, op)
     try:
         r = requests.post(
@@ -1296,11 +1551,18 @@ def act():
     drag {x1, y1, x2, y2}, focus {title}, clipboard_set {text} (forwarded
     to the hands' /clipboard/set).
     """
-    body = request.get_json(force=True, silent=True) or {}
+    body = _json_body()
     op = body.get("op") or ""
     payload = {k: v for k, v in body.items() if k != "op"}
     status, result = _forward_act(op, payload)
     return jsonify(result), status
+
+
+def _param_keys(payload, exclude=()):
+    """Sorted payload key NAMES for a receipt, bounded in count and length
+    (review E6: a receipt must not retain an arbitrarily large body)."""
+    names = sorted(str(k)[:64] for k in payload.keys() if k not in exclude)
+    return names[:PARAM_KEYS_MAX]
 
 
 @app.post("/v1/act/queued")
@@ -1317,7 +1579,7 @@ def act_queued():
     reconcilable via GET /v1/act/queued/<id> even after a lost
     response — a driver never has to guess whether an act landed.
     """
-    body = request.get_json(force=True, silent=True) or {}
+    body = _json_body()
     op = body.get("op") or ""
     hold = _clamp_number(body.get("hold_seconds", HOLD_DEFAULT), HOLD_DEFAULT, HOLD_MIN, HOLD_MAX)
     payload = {k: v for k, v in body.items() if k not in ("op", "hold_seconds")}
@@ -1330,8 +1592,8 @@ def act_queued():
         applied = isinstance(status, int) and 200 <= status < 300
         receipt = {
             "id": uuid.uuid4().hex,
-            "op": op,
-            "param_keys": sorted(payload.keys()),
+            "op": _short(op),
+            "param_keys": _param_keys(payload),
             "state": "applied" if applied else "failed",
             # R9 (#21): which path settled it — "direct" here,
             # "after-hold" when the retry pump applies a held act.
@@ -1371,7 +1633,7 @@ def act_queued():
     receipt = {
         "id": uuid.uuid4().hex,
         "op": op,
-        "param_keys": sorted(k for k in payload.keys() if not (pinned is not None and k == "expect_focus")),
+        "param_keys": _param_keys(payload, exclude=("expect_focus",) if pinned is not None else ()),
         "pinned_foreground": pinned is not None,
         "state": "held",
         "submitted_at": now,
@@ -1517,7 +1779,7 @@ def filedrop():
     """
     if not HANDS_SECRET:
         return jsonify({"ok": False, "error": "HANDS_SECRET not configured on gateway"}), 503
-    body = request.get_json(force=True, silent=True) or {}
+    body = _json_body()
     folder = body.get("folder")
     filename = body.get("filename")
     data_b64 = body.get("data_b64")
@@ -1570,7 +1832,10 @@ def _sample_screen_hash(fetch=None, stable=False):
         png_b, _, err = fetch()
         if err is not None:
             raise _WaitFetchError(err)
-    digest, _, _ = _frame_hash(png_a, png_b, DEFAULT_MASK_BOTTOM)
+    try:
+        digest, _, _ = _frame_hash(png_a, png_b, DEFAULT_MASK_BOTTOM)
+    except _UndecodableFrame:
+        raise _WaitFetchError(_undecodable_response())  # review E7: JSON 502, not HTML 500
     return digest
 
 
@@ -1580,7 +1845,10 @@ def _sample_region_hash(fetch=None, region=None):
     png, _, err = fetch()
     if err is not None:
         raise _WaitFetchError(err)
-    digest, _, _ = _region_hash(png, region)
+    try:
+        digest, _, _ = _region_hash(png, region)
+    except _UndecodableFrame:
+        raise _WaitFetchError(_undecodable_response())  # review E7
     return digest
 
 
@@ -1707,7 +1975,7 @@ def wait_for():
 
     Body: {"condition": {...}, "timeout_seconds": 30, "poll_seconds": 1}
     """
-    body = request.get_json(force=True, silent=True) or {}
+    body = _json_body()
     condition = body.get("condition")
     if not isinstance(condition, dict):
         return jsonify({"ok": False, "error": "condition required"}), 400
@@ -1741,6 +2009,9 @@ def wait_for():
             not isinstance(region, (list, tuple))
             or len(region) != 4
             or any(isinstance(v, bool) or not isinstance(v, (int, float)) for v in region)
+            # Review E7: JSON allows NaN/Infinity, and int(inf) raised an
+            # uncaught OverflowError (500) in the region hash.
+            or any(not math.isfinite(v) for v in region)
         ):
             return jsonify({"ok": False, "error": "region must be [x, y, w, h]"}), 400
         state["region"] = list(region)
@@ -1820,4 +2091,10 @@ if __name__ == "__main__":
     # endpoints (wait_for up to 300 s, screen/wait 25 s, a long type
     # forward up to 600 s) overlapped — every route, /v1/info
     # included, queued behind them. 32 costs nothing at this scale.
-    serve(app, host="0.0.0.0", port=5010, threads=32)
+    # Review I1: the bind address is configurable. The default stays
+    # 0.0.0.0 (all interfaces) so an agent that reaches the gateway by the
+    # PC's tailnet IP keeps working; set RELAY_GATEWAY_HOST=127.0.0.1 when
+    # the gateway is only reached through Tailscale Serve or a local proxy.
+    host = os.environ.get("RELAY_GATEWAY_HOST", "0.0.0.0").strip() or "0.0.0.0"
+    print(f"HandsRelay gateway listening on {host}:5010")
+    serve(app, host=host, port=5010, threads=32)
