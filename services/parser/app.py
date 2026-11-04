@@ -28,6 +28,7 @@ import binascii
 import io
 import os
 import threading
+import time
 
 from flask import Flask, jsonify, request
 
@@ -49,8 +50,15 @@ _state_lock = threading.Lock()
 _infer_lock = threading.RLock()
 _detector = None
 _detector_state = "not_tried"  # -> loaded | weights_missing | deps_missing | load_error: ...
+_detector_tried_at = 0.0  # monotonic time of the last load attempt
 _captioner = None
 _captioner_state = "not_tried"
+
+# Review E8: a failed detector load is retried at most this often (it used
+# to be final until restart, even after fetch_weights.py added the weights).
+RETRY_SECONDS = float(os.environ.get("PARSER_RETRY_SECONDS", "60"))
+_loader_stop = threading.Event()
+_loader_thread = None
 
 
 def _find_detector_weights():
@@ -64,13 +72,24 @@ def _find_detector_weights():
     return None
 
 
+def _load_attempt_due():
+    """True when a (re)load may be attempted now (call with _state_lock or
+    as a lock-free pre-check). A loaded detector never reloads."""
+    if _detector is not None:
+        return False
+    if _detector_state == "not_tried":
+        return True
+    return time.monotonic() - _detector_tried_at >= RETRY_SECONDS
+
+
 def _get_detector():
-    global _detector, _detector_state
-    if _detector is not None or _detector_state not in ("not_tried",):
+    global _detector, _detector_state, _detector_tried_at
+    if not _load_attempt_due():
         return _detector
     with _state_lock:
-        if _detector is not None or _detector_state != "not_tried":
+        if not _load_attempt_due():
             return _detector
+        _detector_tried_at = time.monotonic()
         weights = _find_detector_weights()
         if not weights:
             _detector_state = "weights_missing"
@@ -86,6 +105,39 @@ def _get_detector():
         except Exception as exc:  # weights present but unreadable
             _detector_state = f"load_error: {exc}"
         return _detector
+
+
+def start_background_loader(interval=None):
+    """Load the detector in the background, retrying until it loads.
+
+    Review E8: /health is a pure read by design (it must never trigger or
+    block on a load), so model_loaded used to stay false until something
+    called /parse -- a `parser_model_loaded` wait could not succeed on its
+    own. The packaged app and `python app.py` start this loader.
+    """
+    global _loader_thread
+    if _loader_thread is not None and _loader_thread.is_alive():
+        return
+    _loader_stop.clear()
+    period = RETRY_SECONDS if interval is None else float(interval)
+
+    def _run():
+        while not _loader_stop.is_set():
+            try:
+                if _get_detector() is not None:
+                    return
+            except Exception:
+                pass
+            _loader_stop.wait(period)
+
+    _loader_thread = threading.Thread(target=_run, name="parser-model-loader", daemon=True)
+    _loader_thread.start()
+
+
+def stop_background():
+    """Stop the background loader (review L3: the app calls this when it
+    retires the module)."""
+    _loader_stop.set()
 
 
 def _get_captioner():
@@ -297,4 +349,5 @@ if __name__ == "__main__":
     # Loopback by default: the parser has no auth of its own and is an
     # internal service. Docker deployments set PARSER_HOST=0.0.0.0
     # (docker-compose.yml) so the gateway container can reach it.
+    start_background_loader()  # review E8: model_loaded without waiting for a /parse
     serve(app, host=os.environ.get("PARSER_HOST", "127.0.0.1"), port=5011, threads=4)

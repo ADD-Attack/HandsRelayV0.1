@@ -41,7 +41,9 @@ build_ui_server on 127.0.0.1) inside a native pywebview shell. One GUI:
 RelayApp is the controller behind it; nothing starts until Start.
 """
 
+import heapq
 import importlib.util
+import itertools
 import math
 import os
 import queue
@@ -59,6 +61,13 @@ import requests
 import waitress
 from PIL import Image  # noqa: F401
 
+try:  # Optional (review E1): richer /windows (process names) when installed.
+    import win32con  # noqa: F401
+    import win32gui  # noqa: F401
+    import win32process  # noqa: F401
+except ImportError:  # focus and the hwnd pin work without it (ctypes)
+    pass
+
 HANDS_PORT = 5000
 GATEWAY_PORT = 5010
 PARSER_PORT = 5011
@@ -73,6 +82,16 @@ SERVICE_FILES = {
 SERVICE_PORTS = {"hands": HANDS_PORT, "parser": PARSER_PORT, "gateway": GATEWAY_PORT}
 SERVICE_HOSTS = {"hands": "127.0.0.1", "parser": "127.0.0.1", "gateway": "0.0.0.0"}
 SERVICE_LABELS = {"hands": "Hands", "parser": "Parser", "gateway": "Gateway"}
+
+
+def _service_host(name):
+    """Bind address for a service. Review I1: the gateway's is configurable
+    via RELAY_GATEWAY_HOST (e.g. 127.0.0.1 behind Tailscale Serve). The
+    default stays 0.0.0.0 so an agent reaching the PC by its tailnet IP
+    keeps working; hands and parser are always loopback-only."""
+    if name == "gateway":
+        return os.environ.get("RELAY_GATEWAY_HOST", "").strip() or SERVICE_HOSTS[name]
+    return SERVICE_HOSTS[name]
 
 AUTOSTART_RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 AUTOSTART_VALUE_NAME = "HandsRelay v2"
@@ -607,15 +626,58 @@ def _load_service(name, rel_path):
 
 class _Scheduler:
     """The Tk root's after() contract without Tk: run fn after ms
-    milliseconds on a daemon timer thread. RelayApp only ever calls
-    root.after(ms, fn), so the controller logic (poll, drain,
-    self-heal) is unchanged from the Tk build."""
+    milliseconds. RelayApp only ever calls root.after(ms, fn), so the
+    controller logic (poll, drain, self-heal) is unchanged from the Tk
+    build.
+
+    Review I3: this used to start a new OS thread (threading.Timer) for
+    EVERY call -- about 3.5 thread starts a second for the 300 ms drain
+    and the 5 s poll -- and a failed thread start inside _drain_queue's
+    `finally` would have ended the drain chain for good. Now one daemon
+    thread runs a time-ordered queue; a callback that raises is contained
+    and never stops the loop. Callbacks run one at a time, so they must
+    stay quick (the poll already hands its HTTP work to its own thread).
+    """
+
+    def __init__(self, clock=time.monotonic):
+        self._clock = clock
+        self._cond = threading.Condition()
+        self._heap = []
+        self._order = itertools.count()
+        self._thread = None
 
     def after(self, ms, fn, *args):
-        t = threading.Timer(max(0, ms) / 1000.0, fn, args=args)
-        t.daemon = True
-        t.start()
-        return t
+        due = self._clock() + max(0, ms) / 1000.0
+        with self._cond:
+            heapq.heappush(self._heap, (due, next(self._order), fn, args))
+            if self._thread is None or not self._thread.is_alive():
+                self._thread = threading.Thread(
+                    target=self._run, name="relay-scheduler", daemon=True
+                )
+                self._thread.start()
+            self._cond.notify()
+        return None
+
+    def _next_due(self):
+        """Pop the next callback once it is due (blocks until then)."""
+        with self._cond:
+            while True:
+                if self._heap:
+                    wait = self._heap[0][0] - self._clock()
+                    if wait <= 0:
+                        _due, _n, fn, args = heapq.heappop(self._heap)
+                        return fn, args
+                    self._cond.wait(wait)
+                else:
+                    self._cond.wait()
+
+    def _run(self):
+        while True:
+            fn, args = self._next_due()
+            try:
+                fn(*args)
+            except Exception:
+                pass  # one bad callback must not stop every later one
 
 
 LOG_KEEP = 600  # log lines the window keeps (older lines scroll away)
@@ -637,6 +699,7 @@ class RelayApp:
         self._hands_secret = None
         self._hands_module = None
         self._gateway_module = None
+        self._parser_module = None
         self._last_model = None
         self._started = False
         self._poll_logged = False
@@ -766,16 +829,33 @@ class RelayApp:
 
     @staticmethod
     def _elevation_state(hands, eid):
+        """Current state of a request, with its TTL applied (review E3).
+
+        The hands only expired a pending request when the agent polled it
+        or someone clicked the card, so an unpolled request read "pending"
+        here forever: its card never closed and self-heal stayed blocked.
+        A request the hands no longer has (pruned) reads as "expired".
+        """
         try:
             elevations = getattr(hands, "_elevations", {})
             lk = getattr(hands, "_elevations_lock", None)
-            if lk is None:
+            expire = getattr(hands, "_expire_if_stale", None)
+
+            def read():
                 found = elevations.get(eid)
+                if isinstance(found, dict) and callable(expire):
+                    expire(found)
+                return found
+
+            if lk is None:
+                found = read()
             else:
                 with lk:
-                    found = elevations.get(eid)
+                    found = read()
             if isinstance(found, dict) and found.get("state"):
                 return found["state"]
+            if found is None and hasattr(hands, "_elevations"):
+                return "expired"
         except Exception:
             pass
         return None
@@ -804,6 +884,17 @@ class RelayApp:
             # Forward anything the in-process hands logged (bad-secret
             # rejections, lockouts) into this window's log.
             hands = self._hands_module
+            # Review E4: the gateway's bad-token rejections and lockouts,
+            # which used to reach only its logger (never shown here).
+            gateway_log = getattr(getattr(self, "_gateway_module", None), "log_queue", None)
+            if gateway_log is not None:
+                try:
+                    while True:
+                        self.ui_queue.put(
+                            ("log", f"[{self._stamp()}] gateway: {gateway_log.get_nowait()}")
+                        )
+                except queue.Empty:
+                    pass
             if hands is not None:
                 try:
                     while True:
@@ -914,7 +1005,7 @@ class RelayApp:
     def _start_one_locked(self, name):
         label = SERVICE_LABELS[name]
         port = SERVICE_PORTS[name]
-        host = SERVICE_HOSTS[name]
+        host = _service_host(name)
         # Refuse to duplicate a service that is already answering on the
         # port. A bare bind is not a reliable check on Windows (socket
         # reuse can let a second listener attach silently, after which
@@ -979,7 +1070,11 @@ class RelayApp:
             module.HANDS_URL = HANDS_URL
             module.HANDS_SECRET = self._hands_secret
             module.PARSER_URL = f"http://127.0.0.1:{PARSER_PORT}"
+            # Review E4: gateway lockouts alert through the hands' ntfy topic.
+            module.ALERT_HOOK = self._alert_via_hands
             self._gateway_module = module
+        if name == "parser":
+            self._parser_module = module
         try:
             # R4 (F9): match the gateway module's 32 — long-poll
             # endpoints must not starve act traffic of threads.
@@ -999,7 +1094,58 @@ class RelayApp:
         thread = threading.Thread(target=server.run, name=f"{name}-server", daemon=True)
         thread.start()
         self.log_line(f"{label} service started on port {port}.")
+        if name == "gateway":
+            where = (
+                "all network interfaces - set RELAY_GATEWAY_HOST=127.0.0.1 to restrict"
+                if host == "0.0.0.0"
+                else "this address only"
+            )
+            self.log_line(f"Gateway listening on {host}:{port} ({where}).")
+        if name == "parser":
+            # Review E8: load the model in the background (retrying), so
+            # /health turns model_loaded true without waiting for a /parse.
+            loader = getattr(module, "start_background_loader", None)
+            if callable(loader):
+                loader()
         self.set_status(name, f"{label} (:{port}): running")
+
+    def _alert_via_hands(self, title, message):
+        """The gateway's ALERT_HOOK: send through whichever hands module is
+        current (self-heal can replace it), using its ntfy topic."""
+        alert = getattr(getattr(self, "_hands_module", None), "alert_phone", None)
+        if callable(alert):
+            alert(title, message)
+
+    def _retire_service(self, name, timeout=2.0):
+        """Close a service we started and stop what it leaves running.
+
+        Review L3: waitress's server.close() does not stop the server's 32
+        worker threads, and an in-process reload left the old module's own
+        threads (the gateway's retry loop, the hands' input hooks) running
+        -- and pinning the old module -- forever. Each self-heal restart
+        stranded all of it.
+        """
+        server = self.servers.pop(name, None)
+        if server is not None:
+            try:
+                server.close()
+            except Exception:
+                pass
+            dispatcher = getattr(server, "task_dispatcher", None)
+            if dispatcher is not None:
+                try:
+                    dispatcher.shutdown(cancel_pending=True, timeout=timeout)
+                except Exception:
+                    pass
+        module = getattr(self, f"_{name}_module", None)
+        stopper = getattr(module, "stop_background", None)
+        if not callable(stopper) and name == "hands":
+            stopper = getattr(module, "stop_resting_hand", None)  # an older hands
+        if callable(stopper):
+            try:
+                stopper()
+            except Exception:
+                pass
 
     def _skip_restart(self, name):
         """Do not restart a process that still holds live coordination."""
@@ -1007,6 +1153,14 @@ class RelayApp:
             return True
         if name == "hands":
             module = getattr(self, "_hands_module", None)
+            # Review E3: settle timed-out requests first -- an unpolled one
+            # used to stay "pending" and block hands self-heal forever.
+            sweep = getattr(module, "expire_stale_elevations", None)
+            if callable(sweep):
+                try:
+                    sweep()
+                except Exception:
+                    pass
             table, lock_name, bad = "_elevations", "_elevations_lock", "pending"
         elif name == "gateway":
             module = getattr(self, "_gateway_module", None)
@@ -1045,18 +1199,10 @@ class RelayApp:
                 self.log_line(
                     f"self-heal: restarting {name} after repeated failures"
                 )
-                server = self.servers.pop(name, None)
-                if server is not None:
-                    try:
-                        server.close()
-                    except Exception:
-                        pass
-                if name == "hands":
-                    # R9: the reload makes a fresh module (and resting
-                    # hand); the old module's thread must not live on.
-                    stopper = getattr(self._hands_module, "stop_resting_hand", None)
-                    if callable(stopper):
-                        stopper()
+                # R9 + review L3: the reload makes a fresh module; the old
+                # server's workers and the old module's threads must not
+                # live on (they used to, every restart).
+                self._retire_service(name)
                 self._start_one(name)
         elif action == "give_up":
             self.log_line(
@@ -1172,18 +1318,12 @@ class RelayApp:
         if getattr(self, "_stopping", False):
             return  # window-close and Stop can both land here
         self._stopping = True
-        hands = getattr(self, "_hands_module", None)
-        stopper = getattr(hands, "stop_resting_hand", None)
-        if callable(stopper):
-            try:
-                stopper()
-            except Exception:
-                pass
-        for name, server in list(self.servers.items()):
-            try:
-                server.close()
-            except Exception:
-                pass
+        # Review L3/I5: stop each module's threads too -- notably the hands'
+        # system-wide input hooks -- not just the listening sockets. The
+        # process exits right after, so nothing waits on worker threads.
+        for name in list(SERVICE_FILES):
+            if name in self.servers or getattr(self, f"_{name}_module", None) is not None:
+                self._retire_service(name, timeout=0)
         self.servers.clear()
         try:
             if callable(getattr(self, "on_quit", None)):
