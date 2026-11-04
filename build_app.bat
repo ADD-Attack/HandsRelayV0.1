@@ -38,9 +38,22 @@ if errorlevel 1 (
   )
 )
 
+rem Optional: pywin32 adds process names to /v1/windows. Focus and the
+rem held-act window pin work without it (ctypes). PyInstaller bundles it
+rem when installed because hands_relay_v2_app.py imports it optionally.
+python -c "import win32gui" 2>nul
+if errorlevel 1 (
+  echo Installing pywin32 - optional, for process names in the window list...
+  python -m pip install pywin32
+  if errorlevel 1 echo pywin32 install failed - building without it.
+)
+
 rem The app loads the three service modules from files at runtime, so
 rem bundle them inside the exe: hands, gateway, and parser. The exe then
 rem runs standalone from any folder — one icon, one Start button.
+rem NOTE: PyInstaller cannot see imports inside these data files; any new
+rem third-party import in a service module must also be imported (or
+rem optionally imported) in hands_relay_v2_app.py to be bundled.
 python -m PyInstaller --onefile --windowed --name "HandsRelay v2" --icon relay.ico --hidden-import pyautogui --hidden-import webview --add-data "ui;ui" --add-data "relay.ico;." --add-data "services\gateway\app.py;services\gateway" --add-data "services\parser\app.py;services\parser" --add-data "hands\hands_relay_hands.py;hands" --add-data "hands\motion.py;hands" hands_relay_v2_app.py
 if errorlevel 1 (
   echo Build failed. This window will close.

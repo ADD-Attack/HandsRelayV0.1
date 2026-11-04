@@ -53,6 +53,9 @@ def test_focus_matches_hwnd(hands):
 
 def test_yield_409_carries_foreground_hwnd(hands, monkeypatch):
     monkeypatch.setattr(hands, "_probe_lock_state", lambda: (False, 0.2))
+    # The native GetForegroundWindow lookup answers first on a Windows host;
+    # stub it out so the enumerated windows below define the foreground.
+    monkeypatch.setattr(hands, "_foreground_window_native", lambda: None)
     monkeypatch.setattr(hands, "_enum_windows",
                         lambda: [{"title": "a", "focused": False, "_hwnd": 1},
                                  {"title": "b", "focused": True, "_hwnd": 42}])
@@ -65,6 +68,7 @@ def test_yield_409_carries_foreground_hwnd(hands, monkeypatch):
 
 def test_yield_409_without_foreground_omits_hwnd(hands, monkeypatch):
     monkeypatch.setattr(hands, "_probe_lock_state", lambda: (False, 0.2))
+    monkeypatch.setattr(hands, "_foreground_window_native", lambda: None)
     monkeypatch.setattr(hands, "_enum_windows", lambda: [])
     with hands.app.test_request_context("/click", method="POST", json={}):
         resp, status = hands._yield_if_active()
@@ -109,7 +113,11 @@ def test_pinned_retry_into_other_window_fails_not_applies(gateway, client, monke
     monkeypatch.setattr(gateway, "_forward_act", forward)
     rid = client.post("/v1/act/queued", json={"op": "click", "x": 1, "y": 2},
                       headers=TOKEN).get_json()["id"]
-    out = gateway._pump_receipt(gateway._receipts[rid], 1e12 - 1)
+    # Retry inside the hold window. (This used to pump at t=1e12, far past
+    # the deadline; since review E2 a lapsed receipt is never forwarded.)
+    receipt = gateway._receipts[rid]
+    out = gateway._pump_receipt(receipt, receipt["submitted_at"] + 1)
+    assert len(calls) == 2  # the pinned retry really was forwarded
     assert out["state"] == "failed"
 
 

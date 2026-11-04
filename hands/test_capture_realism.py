@@ -150,8 +150,14 @@ def run():
     r = client.get("/monitors")  # no secret
     check("/monitors still requires the secret", r.status_code == 401)
 
-    # Fallback seam: no Windows enumeration -> one primary rect.
-    rects = orig_monitor_rects()
+    # Fallback seam: no Windows enumeration -> one primary rect. Force the
+    # non-Windows branch so this checks the fallback on a Windows host too.
+    real_os_name = hands.os.name
+    hands.os.name = "posix"
+    try:
+        rects = orig_monitor_rects()
+    finally:
+        hands.os.name = real_os_name
     check(
         "_monitor_rects fallback is a single primary rect from pyautogui.size()",
         rects == [{"x": 0, "y": 0, "w": 1920, "h": 1080, "primary": True}],

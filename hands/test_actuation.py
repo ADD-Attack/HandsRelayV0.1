@@ -268,8 +268,20 @@ def run():
     orig_write = fake_pag.write
     orig_sleep_stub = hands.time.sleep
     orig_probe_dwtime = hands._probe_dwtime
+    orig_ensure_started = hands._owner_monitor.ensure_started
+    orig_owner_snapshot = hands._owner_input_snapshot
+    orig_tick_ms = hands._tick_ms
     url40 = "https://www.spotify.com/account/privacy/"
     try:
+        # These checks drive the dwTime fallback. On a Windows host the real
+        # low-level hooks would start and take over (hook mode), so keep the
+        # hook monitor out of it, as tests/test_r72_fixround.py does -- and
+        # use no host tick clock (as off Windows): the real GetTickCount has
+        # no relation to _InputClock and would put the owner's key inside
+        # the publish-grace window (grace is covered in test_r72_fixround).
+        hands._owner_monitor.ensure_started = lambda wait=0.5: False
+        hands._owner_input_snapshot = lambda: None
+        hands._tick_ms = lambda: None
         # R7.2 fix (Finding 7): the backend mutation and the jitter=false
         # request sit INSIDE the protected scope, so an exception there
         # still restores every patched seam in the finally below.
@@ -319,6 +331,9 @@ def run():
         fake_pag.write = orig_write
         hands.time.sleep = orig_sleep_stub
         hands._probe_dwtime = orig_probe_dwtime
+        hands._owner_monitor.ensure_started = orig_ensure_started
+        hands._owner_input_snapshot = orig_owner_snapshot
+        hands._tick_ms = orig_tick_ms
         hands._clipboard_backend = orig_backend
 
     # ------------------------------------------------ windows + focus (#3)

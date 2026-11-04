@@ -32,8 +32,11 @@ the gateway is the only surface an agent talks to).
 
 Secrets in the packaged app:
 
-- The **gateway token** is minted fresh every launch and shown in the window
-  with a Copy button. It is never saved anywhere.
+- The **gateway token** persists per machine at
+  `%USERPROFILE%\.HandsRelayV0.1\gateway-token.txt` — generated on first
+  run, reused after that (delete the file to rotate it), so an agent keeps
+  working across relaunches. The window shows it on demand (Show / Copy);
+  it is never logged.
 - The **hands secret** is owned by the app and persists per machine at
   `%USERPROFILE%\.HandsRelayV0.1\hands-secret.txt` — generated on first run,
   reused after that (delete the file to rotate it). The app feeds the same
@@ -105,7 +108,13 @@ claim first so other sessions can see who holds the desktop:
   true, "position": N}`).
 - When a claim is released or expires, the queue head gets a 30 s
   reservation: only that holder's claim can be granted during the grace
-  window; everyone else still gets `409` / a queue slot.
+  window; everyone else still gets `409` / a queue slot. A head that does
+  not claim within its window **forfeits its queue slot** (it can queue
+  again at the back).
+- The queue holds at most 32 waiters (`409` with `"queue_full": true`
+  beyond that). Re-POSTing `{"queue": true}` keeps a waiter's position and
+  refreshes its entry; entries not refreshed for 60 minutes are dropped.
+  Holder names are capped at 128 characters, purposes at 500.
 - `POST /v1/hands/release` `{"holder"}` — only the current holder can
   release (`403` otherwise; releasing an expired claim is an ok no-op).
   `{"holder", "cancel_queue": true}` instead drops that holder's queue
@@ -125,13 +134,18 @@ Plain `POST /v1/act` surfaces that as-is and is unchanged.
 (default 30, clamped 1–120):
 
 - Any result other than a yield-`409` is returned exactly as `/v1/act`
-  would return it — no receipt is filed.
-- A yield-`409` (error mentions "yield" / "user active") files a
-  receipt and answers `202 {"queued": true, "id": ..., "state":
-  "held"}`. A retry thread re-forwards the act about once a second
-  until the deadline: a non-`409` answer settles the receipt `applied`,
+  would return it, plus the `id` of a receipt filed for it (every
+  submission files one, so a lost response can still be reconciled).
+- A yield-`409` (`error_code` `"yield"` / `"locked"`; older hands: error
+  mentions "yield" / "user active") files a receipt and answers
+  `202 {"queued": true, "id": ..., "state": "held"}`. A retry thread
+  re-forwards held acts in submission order, about once a second, until
+  their deadlines: a non-`409` answer settles the receipt `applied`,
   still-`409` at the deadline settles it `refused-yielded`, and an
-  unreachable hands settles it `failed`.
+  unreachable hands settles it `failed`. **A held act is never forwarded
+  once its deadline has passed** — if an earlier act (say a long `type`)
+  kept the retry thread busy past it, it settles `refused-yielded` instead
+  of landing late.
 - `GET /v1/act/queued/<id>` returns the receipt; an unknown or evicted
   id answers `404` with `"state": "expired"`. `GET /v1/act/queued`
   lists receipt summaries (`id`, `op`, `state`, `submitted_at`), newest
@@ -154,7 +168,9 @@ offsets; a wrong offset is a 409 carrying the expected offset),
 `POST /filedrop/commit` (verifies size and SHA-256, then writes via a
 temp file + atomic replace in the target folder), and
 `POST /filedrop/abort`. Uploads are capped at 16 MB and expire after
-10 minutes. Drops only land in allowlisted folders: the hands config
+10 minutes (any authenticated hands request purges expired ones). At
+most 4 uploads / 64 MB of declared size may be in flight at once; `begin`
+beyond that answers 503. Drops only land in allowlisted folders: the hands config
 file key `"filedrop_dirs"` (a list of absolute paths), or the
 `HANDS_FILEDROP_DIRS` environment variable (`os.pathsep`-separated,
 which wins when set). With no allowlist configured, every filedrop
@@ -178,7 +194,9 @@ if the hands answers 404/501 the wait returns
 `{"ok": false, "error": "hands does not support window titles"}`
 immediately instead of burning the timeout), and
 `{"type": "parser_model_loaded"}` (the parser's `/health` reports
-`model_loaded` true).
+`model_loaded` true — the parser loads its model in the background at
+startup and retries a failed load every 60 s, `PARSER_RETRY_SECONDS`, so
+weights fetched while it runs are picked up without a restart).
 
 **PC lock/sleep state:** the hands' `GET /state` returns
 `{"ok": true, "platform": "windows"|"other", "locked": true|false|null,
@@ -202,7 +220,7 @@ routes (and, through the gateway, the same X-Relay-Token gate):
 | `POST /break {times?: 1..3}` | act op `break` | Ctrl+C chord(s), 0.15 s apart. |
 | `POST /drag {x1, y1, x2, y2, button?, duration?}` | act op `drag` | Mouse-down at the start point, move, mouse-up at the end point. |
 | `GET /windows` | `GET /v1/windows` | Open windows: title, process, pid, bounds, monitor index, visible, focused. Off Windows it returns an empty list with `"supported": false`. |
-| `POST /focus {title, exact?}` | act op `focus` | Focus the first window whose title matches (substring, case-insensitive; full-title when `exact` is true); restores a minimised window first. No match → 404. |
+| `POST /focus {title, exact?}` | act op `focus` | Focus the first window whose title matches (substring, case-insensitive; full-title when `exact` is true); restores a minimised window first. No match → 404. Works without pywin32 (ctypes); pywin32, when installed, only adds process names to `/windows`. |
 | `POST /clipboard/set {text}` | act op `clipboard_set` | Set the clipboard (Windows: ctypes `CF_UNICODETEXT`; else pyperclip when importable; otherwise 501). |
 | `GET /clipboard/get` | `GET /v1/clipboard` | Read the clipboard (same backends, same 501 when unavailable). |
 
@@ -210,6 +228,13 @@ routes (and, through the gateway, the same X-Relay-Token gate):
 as every other hands/gateway route, and *every read writes a line to the
 hands log queue* (`clipboard read via relay`), so the owner sees reads
 in the app window as they happen.
+
+**Failsafe.** Throwing the pointer into a screen corner (pyautogui's
+FAILSAFE) aborts the act in progress; the hands answer
+`409 {"error_code": "failsafe"}` and log it to the app window. An agent
+must treat it as the owner saying *stop* — it is not a yield, so a queued
+act settles `failed` rather than being retried. Malformed act bodies
+(`/move`, `/click`, `/key`, `/scroll` included) are a JSON `400`.
 
 **Why `/break` exists:** the older `/key` op calls `pyautogui.press()`
 with ONE key name, so a chord string like `"ctrl+c"` sent to `/key` was
@@ -317,6 +342,10 @@ elevated launch without ever being able to cause one:
   Windows UAC `runas` verb, so the UAC prompt still appears too. Deny
   (No) does nothing. There is no auto-approve path, no timeout-approve,
   and no config flag that approves.
+- A request that times out closes its card on time even if the agent
+  never polls it. Settled requests are kept for an hour (then pruned; the
+  table holds at most 200). The standalone hands app has no approval UI,
+  so it denies elevation requests immediately and logs why.
 
 ## Hands (Windows)
 
@@ -332,8 +361,11 @@ standalone hands app is still available:
 
 ```
 cd hands
-build_hands_relay.bat   :: builds "HandsRelay.exe" (v1 hands, carried forward)
+build_hands_relay.bat   :: builds "HandsRelay.exe" (standalone hands)
 ```
+
+`start-v2.bat` then starts the parser and gateway in console windows for
+that split setup; it asks for the hands app's session secret.
 
 Standalone, the hands app works as it always did: per-session generated
 secret shown in its window, constant-time compare, lockout with phone
@@ -343,18 +375,44 @@ session secret into the gateway's `HANDS_SECRET` yourself.
 
 ## Security model
 
-- Nothing listens publicly by default. Preferred transport is Tailscale
-  Serve (tailnet-only); a public tunnel is a fallback, never the design.
-- The gateway token is generated fresh on every launch and destroyed on
-  close. The hands secret in the packaged app is the one stored credential:
-  app-owned, kept in the user's profile (`%USERPROFILE%\.HandsRelayV0.1\`),
-  and only ever used on the localhost gateway↔hands link — it never
-  crosses the network. (The standalone hands app still uses a per-session
-  secret instead.)
-- Failed auth attempts are logged; 10 in 10 minutes pauses auth for
-  5 minutes and pushes a phone alert.
+- The hands and the parser listen on loopback only. **The gateway listens
+  on all interfaces (0.0.0.0) by default** — in the packaged app and when
+  run directly — so an agent can reach it by the PC's tailnet IP; the token
+  is what protects it. Set `RELAY_GATEWAY_HOST=127.0.0.1` when the gateway
+  is only reached through Tailscale Serve or a local proxy (the app window
+  logs where the gateway listens). Docker publishes it on 127.0.0.1 only.
+  Preferred transport is Tailscale (tailnet-only); a public tunnel is a
+  fallback, never the design.
+- Two credentials are stored, both app-owned in the user's profile
+  (`%USERPROFILE%\.HandsRelayV0.1\`): the gateway token (what the agent
+  presents) and the hands secret (only ever used on the localhost
+  gateway↔hands link — it never crosses the network). Delete a file to
+  rotate it. (The standalone hands app still uses a per-session secret.)
+- Failed auth attempts are logged; 10 in 10 minutes from one address
+  pauses auth for that address for 5 minutes. Gateway rejections and
+  lockouts appear in the packaged app's log, and a lockout pushes a phone
+  alert through the hands' ntfy topic (a standalone gateway alerts via
+  `RELAY_NTFY_TOPIC`). The standalone hands app alerts on its own lockouts.
 - Design rule inherited from v1's audit: the URL is obscurity, not a
   control — the secret and the transport are the controls.
+
+## Running the tests
+
+```
+pip install flask waitress requests pillow pytest
+python tools/run_all_tests.py
+```
+
+runs every suite, each in its own process (the suites install
+`sys.modules` fakes and must not share an interpreter): files with
+pytest test functions via `python -m pytest`, the older script-style
+files (`run()` + `check()`) directly. Plain `pytest` at the root is not
+equivalent — it collects nothing from the script-style files. CI runs the
+same command on every push and pull request
+(`.github/workflows/tests.yml`). Windows-live behaviour (real actuation,
+hooks, UAC, lock detection, the display probe) is stub-tested only; the
+live checklist, including the memory soak, is in
+[docs/VERIFICATION.md](docs/VERIFICATION.md).
 
 ## Operating notes for agents
 

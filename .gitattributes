@@ -1,0 +1,3 @@
+# Windows batch files must be CRLF on checkout: cmd.exe can mis-parse
+# labels and goto in LF-only files. Stored LF in the repo as before.
+*.bat text eol=crlf

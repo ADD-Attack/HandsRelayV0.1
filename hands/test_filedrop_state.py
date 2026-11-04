@@ -217,8 +217,14 @@ def run():
         r = post("/filedrop/commit", {"upload_id": uid})
         body = r.get_json()
         final = os.path.join(drop_dir, "good.bin")
+
+        def _same_path(a, b):
+            # The hands report the case-normalised real path; on Windows that
+            # is lower case with 8.3 names expanded, so compare normalised.
+            return os.path.normcase(os.path.realpath(a)) == os.path.normcase(os.path.realpath(b))
+
         check("commit happy path returns path/size/sha",
-              r.status_code == 200 and body["ok"] and body["path"] == final
+              r.status_code == 200 and body["ok"] and _same_path(body.get("path") or "", final)
               and body["size"] == len(data)
               and body["sha256"] == hashlib.sha256(data).hexdigest())
         with open(final, "rb") as fh:

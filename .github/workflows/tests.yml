@@ -1,0 +1,42 @@
+name: tests
+
+# Review finding T1: nothing ran the suites automatically, and plain
+# `pytest` collects nothing from the script-style files. One runner does
+# both, each suite in its own process: python tools/run_all_tests.py
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install test dependencies
+        run: python -m pip install flask waitress requests pillow pytest
+      - name: Run every suite, one process each
+        run: python tools/run_all_tests.py
+
+  windows:
+    # Review finding T2: the Windows code paths (ctypes probes, hooks,
+    # focus) only execute on Windows. Informational until the suite is
+    # confirmed green on a Windows runner -- then drop continue-on-error.
+    runs-on: windows-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install test dependencies
+        run: python -m pip install flask waitress requests pillow pytest
+      - name: Run every suite, one process each
+        run: python tools/run_all_tests.py

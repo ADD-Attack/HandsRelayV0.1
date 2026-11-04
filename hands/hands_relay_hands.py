@@ -139,6 +139,72 @@ motion = _load_motion()
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 1_000_000  # requests are tiny JSON
 
+
+def _json_body():
+    """The request's JSON object, or {} for a missing/invalid/non-object
+    body. Review E6: the old `get_json(force=True, silent=True) or {}`
+    idiom let a JSON array through, and the next `.get` raised a 500."""
+    body = request.get_json(force=True, silent=True)
+    return body if isinstance(body, dict) else {}
+
+
+def _failsafe_response(_exc):
+    """Review E5: pyautogui's FAILSAFE (the owner slamming the pointer into
+    a screen corner) is the owner's emergency stop. It used to surface as
+    a bare HTML 500, which an agent cannot tell from a bug -- and the
+    queued-act pump just recorded "failed". It is now a structured,
+    non-yield 409 that says: stop and check with the owner."""
+    log_line("FAILSAFE: owner moved the pointer into a screen corner - act aborted")
+    return (
+        jsonify(
+            {
+                "ok": False,
+                "error": "owner triggered the failsafe (pointer in a screen corner) - "
+                "act aborted; stop and check with the owner before acting again",
+                "error_code": "failsafe",
+            }
+        ),
+        409,
+    )
+
+
+_FAILSAFE_EXC = getattr(pyautogui, "FailSafeException", None)
+if isinstance(_FAILSAFE_EXC, type) and issubclass(_FAILSAFE_EXC, BaseException):
+    app.register_error_handler(_FAILSAFE_EXC, _failsafe_response)
+
+
+_USER32 = None
+
+
+def _user32():
+    """Private user32 handle with pointer-sized HWND argtypes (Windows only).
+
+    Private so these argtypes never leak into pyautogui's / pygetwindow's
+    use of the shared ctypes.windll.user32. Used for focus and foreground
+    lookups so neither needs pywin32 (review E1, I2).
+    """
+    global _USER32
+    if _USER32 is None:
+        from ctypes import wintypes
+
+        lib = ctypes.WinDLL("user32", use_last_error=True)  # type: ignore[attr-defined]
+        lib.GetForegroundWindow.argtypes = []
+        lib.GetForegroundWindow.restype = wintypes.HWND
+        lib.GetWindowTextLengthW.argtypes = [wintypes.HWND]
+        lib.GetWindowTextLengthW.restype = ctypes.c_int
+        lib.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+        lib.GetWindowTextW.restype = ctypes.c_int
+        lib.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+        lib.GetWindowThreadProcessId.restype = wintypes.DWORD
+        lib.IsIconic.argtypes = [wintypes.HWND]
+        lib.IsIconic.restype = wintypes.BOOL
+        lib.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
+        lib.ShowWindow.restype = wintypes.BOOL
+        lib.SetForegroundWindow.argtypes = [wintypes.HWND]
+        lib.SetForegroundWindow.restype = wintypes.BOOL
+        _USER32 = lib
+    return _USER32
+
 # ---- failed-guess lockout ------------------------------------------------
 _fail_lock = threading.Lock()
 MAX_FAILS = 10        # bad secrets allowed inside the window...
@@ -207,6 +273,7 @@ def alert_phone(title: str, message: str) -> None:
 
 _fail_by_peer = {}
 _lockout_by_peer = {}
+_PEER_SWEEP_AT = 256  # review L6: sweep stale per-peer entries past this many peers
 
 
 def _peer_key():
@@ -283,8 +350,47 @@ def _yield_if_active():
     return None
 
 
+def _foreground_window_native():
+    """The foreground window straight from GetForegroundWindow, or None
+    off Windows / on any failure (the seam tests stub).
+
+    Review I2: finding the focused window used to enumerate EVERY window
+    and resolve every window's process name -- on each owner-active yield
+    and on every expect_focus check, i.e. once a second per held receipt.
+    This is one window and one process lookup. Review E1: it needs no
+    pywin32, so the hwnd pin for held acts works in the packaged exe.
+    """
+    if os.name != "nt":
+        return None
+    try:
+        from ctypes import wintypes
+
+        user32 = _user32()
+        hwnd = user32.GetForegroundWindow()
+        if not hwnd:
+            return None
+        length = max(0, int(user32.GetWindowTextLengthW(hwnd)))
+        buf = ctypes.create_unicode_buffer(length + 1)
+        user32.GetWindowTextW(hwnd, buf, len(buf))
+        pid = wintypes.DWORD(0)
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        return {
+            "title": buf.value,
+            "process": _process_name(pid.value),
+            "pid": int(pid.value) or None,
+            "focused": True,
+            "_hwnd": int(hwnd),
+        }
+    except Exception:
+        return None
+
+
 def _foreground_window():
-    """The focused window dict from _enum_windows(), or None."""
+    """The focused window dict, or None: the native lookup first, then the
+    _enum_windows() scan (off Windows / if the native call fails)."""
+    win = _foreground_window_native()
+    if win is not None:
+        return win
     for win in _enum_windows():
         if win.get("focused"):
             return win
@@ -347,7 +453,7 @@ def _focus_guard():
     foreground window cannot be determined, an act that asked for
     verification is refused rather than fired blind.
     """
-    body = request.get_json(force=True, silent=True) or {}
+    body = _json_body()
     expect = body.get("expect_focus")
     if expect is None:
         return None
@@ -378,17 +484,27 @@ def _auth_decide(provided):
         secret = SHARED_SECRET or ""
         if secret and hmac.compare_digest(provided, secret):
             return "ok", False
-        if now < _lockout_by_peer.get(peer, 0.0):
-            return "locked", False
+        until = _lockout_by_peer.get(peer)
+        if until is not None:
+            if now < until:
+                return "locked", False
+            del _lockout_by_peer[peer]  # expired: forget it (review L6)
         if not secret:
             return "bad", False
-        times = _fail_by_peer.setdefault(peer, [])
-        times[:] = [t for t in times if now - t < FAIL_WINDOW]
+        times = [t for t in _fail_by_peer.get(peer, ()) if now - t < FAIL_WINDOW]
         times.append(now)
         tripped = len(times) >= MAX_FAILS
         if tripped:
             _lockout_by_peer[peer] = now + LOCKOUT_SECONDS
-            times.clear()
+            _fail_by_peer.pop(peer, None)
+        else:
+            _fail_by_peer[peer] = times
+        if len(_fail_by_peer) + len(_lockout_by_peer) > _PEER_SWEEP_AT:
+            # Review L6: per-peer entries used to live forever.
+            for p in [p for p, u in _lockout_by_peer.items() if now >= u]:
+                del _lockout_by_peer[p]
+            for p in [p for p, ts in _fail_by_peer.items() if not ts or now - ts[-1] >= FAIL_WINDOW]:
+                del _fail_by_peer[p]
         return "bad", tripped
 
 
@@ -418,6 +534,10 @@ def gate():
             )
         log_line(f"rejected request to {request.path} (bad secret)")
         return jsonify({"ok": False, "error": "bad secret"}), 401
+    # Review L4: abandoned uploads (up to 16 MB each) used to be purged only
+    # by the next file-drop call, which might never come. Any authenticated
+    # request now does it -- the gateway's /state poll runs every few seconds.
+    _purge_uploads()
     if request.path in _ACT_PATHS:
         refused = _yield_if_active()
         if refused is not None:
@@ -638,15 +758,9 @@ def _human_motion_default():
     return _flag("HANDS_HUMAN_MOTION", "human_motion", True)
 
 
-def _tick_ms():
-    """The GetTickCount clock that GetLastInputInfo's dwTime lives on;
-    a monotonic stand-in off Windows (tests, Linux)."""
-    if os.name == "nt":
-        try:
-            return int(ctypes.windll.kernel32.GetTickCount()) & 0xFFFFFFFF  # type: ignore[attr-defined]
-        except Exception:
-            pass
-    return int(time.monotonic() * 1000) & 0xFFFFFFFF
+# (Review I6: a first _tick_ms definition lived here and was silently
+# replaced by the one in the lock/idle section below, which returns None
+# off Windows. Only that one ever ran; the dead copy is gone.)
 
 
 # One input stream at a time, with hand-travel between devices (#30 rule
@@ -715,10 +829,31 @@ def _box(d):
     return w, h
 
 
+_CLICK_BUTTONS = ("left", "middle", "right", "primary", "secondary")
+
+
+def _xy(d):
+    """(x, y) ints from an act body. Review E5: /move, /click, /key and
+    /scroll used to index and int() the body unchecked, so a missing or
+    malformed field was an HTML 500; they now answer a JSON 400 like
+    /drag always has."""
+    try:
+        return int(d["x"]), int(d["y"])
+    except (KeyError, TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("x and y must be integers") from exc
+
+
+def _bad_request(message):
+    return jsonify({"ok": False, "error": message}), 400
+
+
 @app.post("/move")
 def move():
-    d = request.get_json(force=True)
-    x, y = int(d["x"]), int(d["y"])
+    d = _json_body()
+    try:
+        x, y = _xy(d)
+    except ValueError as exc:
+        return _bad_request(str(exc))
     with _input("mouse"):
         if _human(d):
             w, h = _box(d)
@@ -739,9 +874,14 @@ def click():
     optional attention (default true) + text_chars: the pre-move
     hesitation. Timing is fitted to the +0.5 s per-click budget.
     """
-    d = request.get_json(force=True)
-    x, y = int(d["x"]), int(d["y"])
+    d = _json_body()
+    try:
+        x, y = _xy(d)
+    except ValueError as exc:
+        return _bad_request(str(exc))
     button = d.get("button", "left")
+    if button not in _CLICK_BUTTONS:
+        return _bad_request("button must be one of " + ", ".join(_CLICK_BUTTONS))
     if not _human(d):
         with _input("mouse"):
             pyautogui.moveTo(x, y, duration=0.2)
@@ -827,7 +967,7 @@ def type_text():
     refused = _yield_if_active()
     if refused is not None:
         return refused
-    d = request.get_json(force=True, silent=True) or {}
+    d = _json_body()
     text = d.get("text")
     if not isinstance(text, str):
         return jsonify({"ok": False, "error": "text must be a string"}), 400
@@ -963,9 +1103,12 @@ def type_text():
     return jsonify(resp)
 @app.post("/key")
 def key():
-    d = request.get_json(force=True)
+    d = _json_body()
+    name = d.get("key")
+    if not isinstance(name, str) or not name.strip():
+        return _bad_request("key must be a non-empty string")
     with _input("keys"):
-        pyautogui.press(d["key"])
+        pyautogui.press(name)
     return {"ok": True}
 
 
@@ -973,8 +1116,11 @@ def key():
 def scroll():
     """Scroll by clicks. Human mode (R9 #29): variable 1-3 click chunks
     with 30-120 ms pauses instead of one jump; the total is exact."""
-    d = request.get_json(force=True)
-    clicks = int(d.get("clicks", 3))
+    d = _json_body()
+    try:
+        clicks = int(d.get("clicks", 3))
+    except (TypeError, ValueError, OverflowError):
+        return _bad_request("clicks must be an integer")
     with _input("mouse"):
         if _human(d):
             for chunk, pause in motion.plan_scroll(clicks, random):
@@ -1094,12 +1240,41 @@ LLKHF_INJECTED = 0x10
 LLMHF_INJECTED = 0x01
 
 
+# Low-level hook payloads, built once at import (same reason as the L1
+# fix: POINTER() on a per-call class pins that class forever). c_ulong is
+# Windows' DWORD; these layouts are only ever read on Windows.
+class _KBDLLHOOKSTRUCT(ctypes.Structure):
+    _fields_ = [("vkCode", ctypes.c_ulong), ("scanCode", ctypes.c_ulong),
+                ("flags", ctypes.c_ulong), ("time", ctypes.c_ulong),
+                ("dwExtraInfo", ctypes.c_size_t)]
+
+
+class _MSLLHOOKSTRUCT(ctypes.Structure):
+    _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long),
+                ("mouseData", ctypes.c_ulong), ("flags", ctypes.c_ulong),
+                ("time", ctypes.c_ulong), ("dwExtraInfo", ctypes.c_size_t)]
+
+
+_P_KBDLLHOOKSTRUCT = ctypes.POINTER(_KBDLLHOOKSTRUCT)
+_P_MSLLHOOKSTRUCT = ctypes.POINTER(_MSLLHOOKSTRUCT)
+_WM_QUIT = 0x0012
+
+
 class _OwnerInputMonitor:
+    # Review I5: a hook thread that ended (Windows silently drops slow
+    # low-level hooks; the message loop can exit) is restarted on a later
+    # /type, at most once per RESTART_BACKOFF. It used to stay dead for the
+    # life of the process, leaving the type guard on the dwTime fallback.
+    RESTART_BACKOFF = 60.0
+
     def __init__(self):
         self.owner = 0
         self.injected = 0
         self.running = False
         self._thread = None
+        self._thread_id = None
+        self._started_at = None
+        self._stopped = False
         self._ready = threading.Event()
         self._start_lock = threading.Lock()
 
@@ -1113,7 +1288,16 @@ class _OwnerInputMonitor:
         if os.name != "nt":
             return False
         with self._start_lock:
-            if self._thread is None:
+            if self._stopped:
+                return False
+            alive = self._thread is not None and self._thread.is_alive()
+            due = (
+                self._started_at is None
+                or time.monotonic() - self._started_at >= self.RESTART_BACKOFF
+            )
+            if not alive and due:
+                self._ready.clear()
+                self._started_at = time.monotonic()
                 self._thread = threading.Thread(
                     target=self._run, name="hands-input-hooks", daemon=True
                 )
@@ -1121,33 +1305,47 @@ class _OwnerInputMonitor:
         self._ready.wait(wait)
         return self.running
 
+    def stop(self, timeout=2.0):
+        """Unhook and end the hook thread (review I5/L3).
+
+        Called on Stop and before the packaged app replaces this module,
+        so retired hooks stop running a Python callback for every input
+        event on the PC. A stopped monitor never restarts.
+        """
+        with self._start_lock:
+            self._stopped = True
+            thread, tid = self._thread, self._thread_id
+        if thread is None or not thread.is_alive():
+            return
+        if tid:
+            try:
+                ctypes.windll.user32.PostThreadMessageW(tid, _WM_QUIT, 0, 0)  # type: ignore[attr-defined]
+            except Exception:
+                pass
+        thread.join(timeout)
+
     def _run(self):
+        user32 = None
+        hooks = []
         try:
             from ctypes import wintypes
 
             user32 = ctypes.windll.user32  # type: ignore[attr-defined]
             kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+            self._thread_id = int(kernel32.GetCurrentThreadId())
             LRESULT = ctypes.c_ssize_t
             HOOKPROC = ctypes.WINFUNCTYPE(LRESULT, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM)
             user32.SetWindowsHookExW.restype = wintypes.HHOOK
             user32.SetWindowsHookExW.argtypes = [ctypes.c_int, HOOKPROC, wintypes.HINSTANCE, wintypes.DWORD]
             user32.CallNextHookEx.restype = LRESULT
             user32.CallNextHookEx.argtypes = [wintypes.HHOOK, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM]
+            user32.UnhookWindowsHookEx.restype = wintypes.BOOL
+            user32.UnhookWindowsHookEx.argtypes = [wintypes.HHOOK]
             kernel32.GetModuleHandleW.restype = wintypes.HMODULE
-
-            class KBD(ctypes.Structure):
-                _fields_ = [("vkCode", wintypes.DWORD), ("scanCode", wintypes.DWORD),
-                            ("flags", wintypes.DWORD), ("time", wintypes.DWORD),
-                            ("dwExtraInfo", ctypes.c_size_t)]
-
-            class MSL(ctypes.Structure):
-                _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long),
-                            ("mouseData", wintypes.DWORD), ("flags", wintypes.DWORD),
-                            ("time", wintypes.DWORD), ("dwExtraInfo", ctypes.c_size_t)]
 
             def _kbd(code, wparam, lparam):
                 if code >= 0:
-                    flags = ctypes.cast(lparam, ctypes.POINTER(KBD)).contents.flags
+                    flags = ctypes.cast(lparam, _P_KBDLLHOOKSTRUCT).contents.flags
                     if flags & LLKHF_INJECTED:
                         self.injected += 1
                     else:
@@ -1156,7 +1354,7 @@ class _OwnerInputMonitor:
 
             def _mouse(code, wparam, lparam):
                 if code >= 0:
-                    flags = ctypes.cast(lparam, ctypes.POINTER(MSL)).contents.flags
+                    flags = ctypes.cast(lparam, _P_MSLLHOOKSTRUCT).contents.flags
                     if flags & LLMHF_INJECTED:
                         self.injected += 1
                     else:
@@ -1166,10 +1364,15 @@ class _OwnerInputMonitor:
             self._procs = (HOOKPROC(_kbd), HOOKPROC(_mouse))  # keep alive
             hmod = kernel32.GetModuleHandleW(None)
             hk = user32.SetWindowsHookExW(WH_KEYBOARD_LL, self._procs[0], hmod, 0)
+            if hk:
+                hooks.append(hk)
             hm = user32.SetWindowsHookExW(WH_MOUSE_LL, self._procs[1], hmod, 0)
+            if hm:
+                hooks.append(hm)
             if not hk or not hm:
                 file_log("owner-input hooks unavailable; type guard uses dwTime")
-                self._ready.set()
+                return
+            if self._stopped:  # stop() raced the start: unhook right away
                 return
             self.running = True
             self._ready.set()
@@ -1180,6 +1383,11 @@ class _OwnerInputMonitor:
         except Exception as exc:
             file_log(f"owner-input hooks failed: {exc}")
         finally:
+            for hook in hooks:  # review I5: hooks used to stay installed forever
+                try:
+                    user32.UnhookWindowsHookEx(hook)
+                except Exception:
+                    pass
             self.running = False
             self._ready.set()
 
@@ -1327,6 +1535,49 @@ def _probe_health():
     return {"probe_failures": _probe_failures, "probe_ok": _probe_failures < 3}
 
 
+# ---- Win32 struct types, built ONCE at import (memory-leak fix) ----------
+# ctypes.POINTER(cls) stores every pointer type it creates in a
+# process-global cache that is never pruned (CPython <= 3.13), and that
+# entry keeps `cls` alive. _probe_display_raw used to define its GUID
+# struct inside the function and call POINTER() on it, so every GET
+# /state -- i.e. every gateway /v1/info refresh, ~every 5 s in the
+# packaged app -- leaked a fresh struct class plus its LP_ type (~6 KB),
+# for the life of the process. Defined here, POINTER() is a cache hit.
+# Pure type definitions: nothing calls into Win32 at import, so this is
+# safe off Windows too.
+
+
+class _LASTINPUTINFO(ctypes.Structure):
+    _fields_ = [("cbSize", ctypes.c_uint), ("dwTime", ctypes.c_ulong)]
+
+
+class _GUID(ctypes.Structure):
+    _fields_ = [("d1", ctypes.c_ulong), ("d2", ctypes.c_ushort),
+                ("d3", ctypes.c_ushort), ("d4", ctypes.c_ubyte * 8)]
+
+
+class _SYSTEM_POWER_STATUS(ctypes.Structure):
+    _fields_ = [("ACLineStatus", ctypes.c_ubyte), ("BatteryFlag", ctypes.c_ubyte),
+                ("BatteryLifePercent", ctypes.c_ubyte), ("SystemStatusFlag", ctypes.c_ubyte),
+                ("BatteryLifeTime", ctypes.c_ulong), ("BatteryFullLifeTime", ctypes.c_ulong)]
+
+
+_PGUID = ctypes.POINTER(_GUID)
+
+
+def _make_guid(d1, d2, d3, d4):
+    return _GUID(d1, d2, d3, (ctypes.c_ubyte * 8)(*d4))
+
+
+# GUID_VIDEO_SUBGROUP / VIDEOIDLE (display-off timeout). Read-only inputs.
+_GUID_VIDEO_SUBGROUP = _make_guid(
+    0x7516B95F, 0xF776, 0x4464, [0x8C, 0x53, 0x06, 0x16, 0x7F, 0x40, 0xCC, 0x99]
+)
+_GUID_VIDEOIDLE = _make_guid(
+    0x3C0BC021, 0xC8A8, 0x4E07, [0xA9, 0x73, 0x6B, 0x14, 0xCB, 0xCB, 0x2B, 0x7E]
+)
+
+
 def _last_input_raw():
     """(dwTime, now_tick) from GetLastInputInfo + GetTickCount, the ONE
     low-level last-input acquisition (R7.2 fix, Finding 6). Either value
@@ -1337,12 +1588,8 @@ def _last_input_raw():
     try:
         user32 = ctypes.windll.user32  # type: ignore[attr-defined]
         kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
-
-        class _LastInputInfo(ctypes.Structure):
-            _fields_ = [("cbSize", ctypes.c_uint), ("dwTime", ctypes.c_ulong)]
-
-        info = _LastInputInfo()
-        info.cbSize = ctypes.sizeof(_LastInputInfo)
+        info = _LASTINPUTINFO()
+        info.cbSize = ctypes.sizeof(_LASTINPUTINFO)
         if user32.GetLastInputInfo(ctypes.byref(info)):
             dw = int(info.dwTime) & 0xFFFFFFFF
             tick = int(kernel32.GetTickCount()) & 0xFFFFFFFF
@@ -1415,31 +1662,15 @@ def _probe_display_raw():
     try:
         powrprof = ctypes.windll.powrprof  # type: ignore[attr-defined]
         kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
-
-        class _Guid(ctypes.Structure):
-            _fields_ = [("d1", ctypes.c_ulong), ("d2", ctypes.c_ushort),
-                        ("d3", ctypes.c_ushort), ("d4", ctypes.c_ubyte * 8)]
-
-        def _guid(d1, d2, d3, d4):
-            return _Guid(d1, d2, d3, (ctypes.c_ubyte * 8)(*d4))
-
-        # GUID_VIDEO_SUBGROUP / VIDEOIDLE
-        sub = _guid(0x7516B95F, 0xF776, 0x4464, [0x8C, 0x53, 0x06, 0x16, 0x7F, 0x40, 0xCC, 0x99])
-        idle = _guid(0x3C0BC021, 0xC8A8, 0x4E07, [0xA9, 0x73, 0x6B, 0x14, 0xCB, 0xCB, 0x2B, 0x7E])
-
-        class _Sps(ctypes.Structure):
-            _fields_ = [("ACLineStatus", ctypes.c_ubyte), ("BatteryFlag", ctypes.c_ubyte),
-                        ("BatteryLifePercent", ctypes.c_ubyte), ("SystemStatusFlag", ctypes.c_ubyte),
-                        ("BatteryLifeTime", ctypes.c_ulong), ("BatteryFullLifeTime", ctypes.c_ulong)]
-
-        sps = _Sps()
+        sps = _SYSTEM_POWER_STATUS()
         on_dc = bool(kernel32.GetSystemPowerStatus(ctypes.byref(sps))) and sps.ACLineStatus == 0
-        scheme = ctypes.POINTER(_Guid)()
+        scheme = _PGUID()  # module-level pointer type: nothing new is cached per call
         if powrprof.PowerGetActiveScheme(None, ctypes.byref(scheme)) == 0:
             try:
                 value = ctypes.c_ulong(0)
                 read = powrprof.PowerReadDCValueIndex if on_dc else powrprof.PowerReadACValueIndex
-                if read(None, scheme, ctypes.byref(sub), ctypes.byref(idle), ctypes.byref(value)) == 0:
+                if read(None, scheme, ctypes.byref(_GUID_VIDEO_SUBGROUP),
+                        ctypes.byref(_GUID_VIDEOIDLE), ctypes.byref(value)) == 0:
                     out["display_off_after_seconds"] = int(value.value)  # 0 = never
             finally:
                 kernel32.LocalFree(scheme)
@@ -1653,6 +1884,15 @@ def stop_resting_hand():
     _resting.stop()
 
 
+def stop_background():
+    """Stop this module's background threads (review L3): the resting hand
+    and the owner-input hooks. The packaged app calls this before it
+    replaces the module (self-heal) and on Stop; before, the old module's
+    hook thread -- and its system-wide hooks -- outlived every restart."""
+    stop_resting_hand()
+    _owner_monitor.stop()
+
+
 @app.get("/resting")
 def resting_get():
     return {"ok": True, **_resting.status()}
@@ -1661,7 +1901,7 @@ def resting_get():
 @app.post("/resting/claim")
 def resting_claim():
     """Gateway push: {held: bool, expires_in: seconds, seq: int}."""
-    d = request.get_json(force=True, silent=True) or {}
+    d = _json_body()
     held, seq = d.get("held"), d.get("seq")
     expires_in = d.get("expires_in", 0)
     if (
@@ -1713,6 +1953,10 @@ def state():
 _FILEDROP_CHUNK_MAX = 524288
 _FILEDROP_MAX_SIZE = 16 * 1024 * 1024
 _FILEDROP_TTL = 600  # uploads older than 10 minutes are purged lazily
+# Review L4: how much a client may hold open at once. Each upload buffers
+# up to 16 MB in memory until commit/abort/expiry.
+_FILEDROP_MAX_OPEN = 4
+_FILEDROP_MAX_BUFFERED = 64 * 1024 * 1024  # total declared size of open uploads
 
 _uploads: dict = {}
 _uploads_lock = threading.Lock()
@@ -1764,7 +2008,7 @@ def filedrop_begin():
     gate_resp = _filedrop_gate()
     if gate_resp is not None:
         return gate_resp
-    body = request.get_json(force=True, silent=True) or {}
+    body = _json_body()
     folder = body.get("folder")
     filename = body.get("filename")
     size = body.get("size")
@@ -1788,6 +2032,20 @@ def filedrop_begin():
         return jsonify({"ok": False, "error": "sha256 must be a 64-hex string"}), 400
     upload_id = uuid.uuid4().hex
     with _uploads_lock:
+        if (
+            len(_uploads) >= _FILEDROP_MAX_OPEN
+            or sum(up["size"] for up in _uploads.values()) + size > _FILEDROP_MAX_BUFFERED
+        ):
+            return (
+                jsonify(
+                    {
+                        "ok": False,
+                        "error": "file-drop busy: too many uploads in progress "
+                        "(finish or abort one, or wait for it to expire)",
+                    }
+                ),
+                503,
+            )
         _uploads[upload_id] = {
             "id": upload_id,
             "dir": real_folder,
@@ -1805,7 +2063,7 @@ def filedrop_chunk():
     gate_resp = _filedrop_gate()
     if gate_resp is not None:
         return gate_resp
-    body = request.get_json(force=True, silent=True) or {}
+    body = _json_body()
     upload_id = body.get("upload_id")
     offset = body.get("offset")
     data_b64 = body.get("data_b64")
@@ -1844,7 +2102,7 @@ def filedrop_commit():
     gate_resp = _filedrop_gate()
     if gate_resp is not None:
         return gate_resp
-    body = request.get_json(force=True, silent=True) or {}
+    body = _json_body()
     upload_id = body.get("upload_id")
     with _uploads_lock:
         upload = _uploads.get(upload_id)
@@ -1896,7 +2154,7 @@ def filedrop_abort():
     gate_resp = _filedrop_gate()
     if gate_resp is not None:
         return gate_resp
-    body = request.get_json(force=True, silent=True) or {}
+    body = _json_body()
     upload_id = body.get("upload_id")
     with _uploads_lock:
         existed = _uploads.pop(upload_id, None) is not None
@@ -1908,7 +2166,7 @@ def filedrop_abort():
 @app.post("/hotkey")
 def hotkey():
     """Press a true key chord, e.g. {"keys": ["ctrl", "l"]}."""
-    d = request.get_json(force=True, silent=True) or {}
+    d = _json_body()
     keys = d.get("keys")
     if (
         not isinstance(keys, list)
@@ -1936,7 +2194,7 @@ def break_():
     refused = _yield_if_active()
     if refused is not None:
         return refused
-    d = request.get_json(force=True, silent=True) or {}
+    d = _json_body()
     times = d.get("times", 1)
     if isinstance(times, bool) or not isinstance(times, int) or not 1 <= times <= 3:
         return jsonify({"ok": False, "error": "times must be an integer 1..3"}), 400
@@ -1956,7 +2214,7 @@ def drag():
     refused = _yield_if_active()
     if refused is not None:
         return refused
-    d = request.get_json(force=True, silent=True) or {}
+    d = _json_body()
     try:
         x1, y1, x2, y2 = (int(d[k]) for k in ("x1", "y1", "x2", "y2"))
     except (KeyError, TypeError, ValueError):
@@ -2009,16 +2267,34 @@ def _monitor_for_bounds(bounds, rects=None):
     return None
 
 
+_PSUTIL = None  # the psutil module, False when unavailable, None = not tried yet
+
+
+def _psutil():
+    """psutil, imported once (review I2). A missing psutil -- no build script
+    installs it -- used to be re-imported, and fail, for EVERY window on
+    every enumeration; a failed import is not cached by Python."""
+    global _PSUTIL
+    if _PSUTIL is None:
+        try:
+            import psutil
+
+            _PSUTIL = psutil
+        except Exception:
+            _PSUTIL = False
+    return _PSUTIL or None
+
+
 def _process_name(pid):
     """Process image basename for a pid, or None — never raises."""
     if not pid:
         return None
-    try:
-        import psutil
-
-        return psutil.Process(int(pid)).name() or None
-    except Exception:
-        pass
+    ps = _psutil()
+    if ps is not None:
+        try:
+            return ps.Process(int(pid)).name() or None
+        except Exception:
+            pass
     if os.name != "nt":
         return None
     try:
@@ -2070,6 +2346,7 @@ def _enum_windows():
                     "w": int(getattr(w, "width", 0) or 0),
                     "h": int(getattr(w, "height", 0) or 0),
                 }
+                handle = getattr(w, "_hWnd", None)  # pygetwindow keeps the HWND here
                 wins.append({
                     "title": title, "process": None, "pid": None,
                     "bounds": bounds,
@@ -2077,6 +2354,9 @@ def _enum_windows():
                     "visible": bool(getattr(w, "visible", True)),
                     "focused": bool(getattr(w, "isActive", False)),
                     "_window": w,
+                    # Review E1: with the handle, focus and the held-act hwnd
+                    # pin work without pywin32 (via _user32()).
+                    "_hwnd": int(handle) if isinstance(handle, int) and not isinstance(handle, bool) else None,
                 })
         except Exception:
             return []
@@ -2147,29 +2427,32 @@ def _activate_window(win):
     The well-known foreground-lock workaround (AttachThreadInput) is
     deliberately out of scope here — see docs/VERIFICATION.md.
     Returns True only when activation was applied.
+
+    Review E1: this used to import pywin32 BEFORE looking at the window,
+    so on a host without pywin32 -- which is when the pygetwindow
+    fallback windows exist at all -- every /focus failed ("activation
+    failed"), and the fallback below was dead code. Activation now goes
+    through ctypes (_user32()) and needs no pywin32.
     """
     if os.name != "nt":
         return False
-    try:
-        import win32con
-        import win32gui
-
-        hwnd = win.get("_hwnd")
-        if hwnd is None:
-            fallback = win.get("_window")
-            if fallback is not None:
-                try:
-                    if getattr(fallback, "isMinimized", False):
-                        fallback.restore()
-                    fallback.activate()
-                    return True
-                except Exception:
-                    return False
+    hwnd = win.get("_hwnd")
+    if hwnd is None:
+        fallback = win.get("_window")
+        if fallback is None:
             return False
-        if win32gui.IsIconic(hwnd):
-            win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
-        win32gui.SetForegroundWindow(hwnd)
-        return True
+        try:
+            if getattr(fallback, "isMinimized", False):
+                fallback.restore()
+            fallback.activate()
+            return True
+        except Exception:
+            return False
+    try:
+        user32 = _user32()
+        if user32.IsIconic(hwnd):
+            user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+        return bool(user32.SetForegroundWindow(hwnd))
     except Exception:
         return False  # foreground lock can refuse; caller must not claim ok
 
@@ -2190,7 +2473,7 @@ def focus():
     Substring, case-insensitive by default; exact=true requires a full
     (case-insensitive) title match. No match -> 404.
     """
-    d = request.get_json(force=True, silent=True) or {}
+    d = _json_body()
     title = d.get("title")
     if not isinstance(title, str) or not title.strip():
         return jsonify({"ok": False, "error": "title must be a non-empty string"}), 400
@@ -2326,7 +2609,7 @@ def _clipboard_backend():
 
 @app.post("/clipboard/set")
 def clipboard_set():
-    d = request.get_json(force=True, silent=True) or {}
+    d = _json_body()
     text = d.get("text")
     if not isinstance(text, str):
         return jsonify({"ok": False, "error": "text must be a string"}), 400
@@ -2409,6 +2692,43 @@ def _expire_if_stale(entry) -> None:
         entry["state"] = "expired"
 
 
+# Review L5: _elevations used to keep every request forever (states change,
+# nothing was ever deleted). Settled requests are kept for an hour so a
+# late GET /elevate/<id> still answers, and the table is capped.
+ELEVATE_RETAIN_SECONDS = 3600
+ELEVATE_MAX = 200
+
+
+def _prune_elevations_locked(now):
+    for entry in _elevations.values():
+        _expire_if_stale(entry)
+    for eid in [
+        eid for eid, entry in _elevations.items()
+        if entry.get("state") != "pending"
+        and now - float(entry.get("created_at") or 0) > ELEVATE_RETAIN_SECONDS
+    ]:
+        del _elevations[eid]
+    while len(_elevations) >= ELEVATE_MAX:
+        oldest = min(_elevations, key=lambda e: float(_elevations[e].get("created_at") or 0))
+        evicted = _elevations.pop(oldest)
+        if evicted.get("state") == "pending":
+            evicted["state"] = "expired"  # never left resolvable after eviction
+
+
+def expire_stale_elevations():
+    """Settle every pending request that is past its TTL (review E3).
+
+    Expiry used to happen only when the agent polled GET /elevate/<id> or
+    someone clicked the card. An unpolled request therefore stayed
+    "pending" forever: the app's approval card never closed, and the app
+    refused to self-heal the hands while a pending request existed. The
+    packaged app calls this on every UI drain.
+    """
+    with _elevations_lock:
+        for entry in _elevations.values():
+            _expire_if_stale(entry)
+
+
 def _resolve_elevation(eid, approved) -> bool:
     """Resolve a pending request. Called only by the app's dialog.
 
@@ -2435,12 +2755,12 @@ def _resolve_elevation(eid, approved) -> bool:
 
 @app.post("/elevate")
 def elevate():
-    d = request.get_json(force=True, silent=True) or {}
+    d = _json_body()
     name = d.get("name") or ""
     allow = _elevate_allowlist()
     if not allow:
         return jsonify({"ok": False, "error": "elevation not configured"}), 501
-    spec_entry = allow.get(name)
+    spec_entry = allow.get(name) if isinstance(name, str) else None  # review E6: list name was a 500
     if not isinstance(spec_entry, dict):
         return jsonify({"ok": False, "error": "unknown elevation name"}), 404
     eid = uuid.uuid4().hex
@@ -2453,6 +2773,7 @@ def elevate():
         "created_at": time.time(),
     }
     with _elevations_lock:
+        _prune_elevations_locked(entry["created_at"])
         _elevations[eid] = entry
     elevate_queue.put(dict(entry))
     return jsonify({"ok": True, "id": eid, "state": "pending"})
@@ -2679,12 +3000,31 @@ class RelayApp:
                 self._append_log(f"tunnel is up: {url}")
         except queue.Empty:
             pass
+        # Review L5: this standalone window has no approval UI, and nothing
+        # drained elevate_queue, so requests piled up and could never be
+        # approved. Deny them at once (never runs anything) and say why.
+        try:
+            while True:
+                req = elevate_queue.get_nowait()
+                _resolve_elevation(req.get("id"), False)
+                self._append_log(
+                    f"elevation request '{req.get('name')}' denied: approvals "
+                    "need the packaged HandsRelay v2 app"
+                )
+        except queue.Empty:
+            pass
         if not self.stopping:
             self.root.after(200, self._poll)
+
+    LOG_KEEP = 600  # lines the log area keeps, like the packaged app
 
     def _append_log(self, text: str):
         self.log.configure(state="normal")
         self.log.insert("end", text.rstrip() + "\n")
+        # The Text widget used to grow without bound for the life of the app.
+        lines = int(str(self.log.index("end-1c")).split(".")[0])
+        if lines > self.LOG_KEEP:
+            self.log.delete("1.0", f"{lines - self.LOG_KEEP}.0")
         self.log.see("end")
         self.log.configure(state="disabled")
 
