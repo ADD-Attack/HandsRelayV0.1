@@ -1,27 +1,29 @@
 # Review fix round (2026-11) — memory leak + 29 findings
 
-Branch `claude/busy-allen-kjpd3s`, based on `main` @ `0b60141`. Pushed, **not
-merged, not deployed, no PR opened.** This file is the handoff: what each
+Merged into `main` through PR #1 from branch `claude/busy-allen-kjpd3s`
+(a merge commit, so the commit IDs below are the ones on `main`). **Not
+deployed** — rebuild the app to ship it. This file is the handoff: what each
 finding was, what changed, where it is tested, and what still needs the real
 Windows PC or the owner's decision.
 
 ## For the agent picking this up
 
 ```
-git fetch origin claude/busy-allen-kjpd3s && git checkout claude/busy-allen-kjpd3s
+git pull origin main
 pip install flask waitress requests pillow pytest
-python tools/run_all_tests.py          # 35 of 35 suites pass (Linux, Python 3.13)
+python tools/run_all_tests.py          # 35 of 35 suites pass
 ```
 
-1. Re-run the suite, then read the "Owner decisions" section and confirm
-   each with the owner.
+CI (`.github/workflows/tests.yml`) runs the same runner on Linux 3.11-3.13
+and on a Windows runner; all four were green at merge.
+
+1. Read the "Owner decisions" section and confirm each with the owner.
 2. On the Windows PC: `build_app.bat`, then work through
    docs/VERIFICATION.md → "Review fixes (2026-11) — live checks owed"
    (L1 memory soak first: `set RELAY_LIVE_SOAK=1` +
    `python -m pytest -q tests/test_windows_live_soak.py`).
-3. Open a PR to `main` (or merge as the owner prefers). CI
-   (`.github/workflows/tests.yml`) runs the same runner on Linux 3.11-3.13
-   plus an informational Windows job.
+3. Report the live results (for example as a comment on PR #1), and fix
+   forward on a new branch if anything fails on the real desktop.
 
 Each new test file was also run against the previous version of the module
 it covers: every test fails there except three guards that pass on both by
@@ -66,7 +68,7 @@ branch with faked DLLs and fails on the old code (+500 classes / 500 calls).
 | E8 | parser never retries a failed load; model_loaded needs a /parse | retry every 60 s; background loader started by app and `python app.py` | `9fdfc5c` | test_review_parser, test_review_app |
 | E9 | standalone build + launcher broken | build file/icon/motion.py fixed; launcher asks for the secret, quoted `set`; CRLF via .gitattributes; gateway strips env | `150b957` | live (VERIFICATION) |
 | T1 | no CI; 16 of 29 test files not pytest | `tools/run_all_tests.py` + CI workflow | `150b957` | — |
-| T2 | Windows branches never executed | cross-platform forced-branch tests + gated live soak + Windows CI job | `c30bb72`, `150b957` | — |
+| T2 | Windows branches never executed | cross-platform forced-branch tests + gated live soak + Windows CI job (green after test-setup fixes for Windows hosts) | `c30bb72`, `150b957`, `e12a129`, `2f2065b` | — |
 | T3 | conftest monkeypatch never raised | strict except Windows-only ctypes names; fake pyautogui has FailSafeException | `06f99e0` | test_review_hands |
 | T4 | lockout counting never exercised | 10-in-window, pruning, expiry, valid-token, alert tests | `b89a165` | test_review_gateway |
 | T5 | self-heal restart never performed | restart path + real waitress retire test | `9fdfc5c` | test_review_app |
@@ -103,4 +105,6 @@ branch with faked DLLs and fails on the old code (+500 classes / 500 calls).
   documented contract; only repeated identical frames skip the decode.
 - **Parser captioner** load is not retried (optional component; the
   detector, which gates `model_loaded`, is).
-- **Windows CI job** is `continue-on-error` until it is confirmed green.
+- **Windows CI job** passes but is still `continue-on-error`; drop that line
+  in `.github/workflows/tests.yml` to make it a required check (it makes a
+  few real Win32 calls on the runner, so watch it for flakiness first).
