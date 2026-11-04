@@ -206,6 +206,11 @@ def test_type_aborts_midway_when_owner_activates(hands, monkeypatch):
     # hooks would start and take over (hook mode), as in test_r72_fixround.
     monkeypatch.setattr(hands._owner_monitor, "ensure_started", lambda wait=0.5: False)
     monkeypatch.setattr(hands, "_owner_input_snapshot", lambda: None)
+    # No host tick clock (as off Windows): on Windows the real GetTickCount
+    # has no relation to this fake dwTime clock and would put the owner's
+    # key inside the publish-grace window. Grace is covered in
+    # tests/test_r72_fixround.py with a shared virtual clock.
+    monkeypatch.setattr(hands, "_tick_ms", lambda: None)
     monkeypatch.setattr(hands.time, "sleep", sleep)
     writes = []
     monkeypatch.setattr(hands.pyautogui, "write", write)
