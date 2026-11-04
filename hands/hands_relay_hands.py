@@ -1327,6 +1327,49 @@ def _probe_health():
     return {"probe_failures": _probe_failures, "probe_ok": _probe_failures < 3}
 
 
+# ---- Win32 struct types, built ONCE at import (memory-leak fix) ----------
+# ctypes.POINTER(cls) stores every pointer type it creates in a
+# process-global cache that is never pruned (CPython <= 3.13), and that
+# entry keeps `cls` alive. _probe_display_raw used to define its GUID
+# struct inside the function and call POINTER() on it, so every GET
+# /state -- i.e. every gateway /v1/info refresh, ~every 5 s in the
+# packaged app -- leaked a fresh struct class plus its LP_ type (~6 KB),
+# for the life of the process. Defined here, POINTER() is a cache hit.
+# Pure type definitions: nothing calls into Win32 at import, so this is
+# safe off Windows too.
+
+
+class _LASTINPUTINFO(ctypes.Structure):
+    _fields_ = [("cbSize", ctypes.c_uint), ("dwTime", ctypes.c_ulong)]
+
+
+class _GUID(ctypes.Structure):
+    _fields_ = [("d1", ctypes.c_ulong), ("d2", ctypes.c_ushort),
+                ("d3", ctypes.c_ushort), ("d4", ctypes.c_ubyte * 8)]
+
+
+class _SYSTEM_POWER_STATUS(ctypes.Structure):
+    _fields_ = [("ACLineStatus", ctypes.c_ubyte), ("BatteryFlag", ctypes.c_ubyte),
+                ("BatteryLifePercent", ctypes.c_ubyte), ("SystemStatusFlag", ctypes.c_ubyte),
+                ("BatteryLifeTime", ctypes.c_ulong), ("BatteryFullLifeTime", ctypes.c_ulong)]
+
+
+_PGUID = ctypes.POINTER(_GUID)
+
+
+def _make_guid(d1, d2, d3, d4):
+    return _GUID(d1, d2, d3, (ctypes.c_ubyte * 8)(*d4))
+
+
+# GUID_VIDEO_SUBGROUP / VIDEOIDLE (display-off timeout). Read-only inputs.
+_GUID_VIDEO_SUBGROUP = _make_guid(
+    0x7516B95F, 0xF776, 0x4464, [0x8C, 0x53, 0x06, 0x16, 0x7F, 0x40, 0xCC, 0x99]
+)
+_GUID_VIDEOIDLE = _make_guid(
+    0x3C0BC021, 0xC8A8, 0x4E07, [0xA9, 0x73, 0x6B, 0x14, 0xCB, 0xCB, 0x2B, 0x7E]
+)
+
+
 def _last_input_raw():
     """(dwTime, now_tick) from GetLastInputInfo + GetTickCount, the ONE
     low-level last-input acquisition (R7.2 fix, Finding 6). Either value
@@ -1337,12 +1380,8 @@ def _last_input_raw():
     try:
         user32 = ctypes.windll.user32  # type: ignore[attr-defined]
         kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
-
-        class _LastInputInfo(ctypes.Structure):
-            _fields_ = [("cbSize", ctypes.c_uint), ("dwTime", ctypes.c_ulong)]
-
-        info = _LastInputInfo()
-        info.cbSize = ctypes.sizeof(_LastInputInfo)
+        info = _LASTINPUTINFO()
+        info.cbSize = ctypes.sizeof(_LASTINPUTINFO)
         if user32.GetLastInputInfo(ctypes.byref(info)):
             dw = int(info.dwTime) & 0xFFFFFFFF
             tick = int(kernel32.GetTickCount()) & 0xFFFFFFFF
@@ -1415,31 +1454,15 @@ def _probe_display_raw():
     try:
         powrprof = ctypes.windll.powrprof  # type: ignore[attr-defined]
         kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
-
-        class _Guid(ctypes.Structure):
-            _fields_ = [("d1", ctypes.c_ulong), ("d2", ctypes.c_ushort),
-                        ("d3", ctypes.c_ushort), ("d4", ctypes.c_ubyte * 8)]
-
-        def _guid(d1, d2, d3, d4):
-            return _Guid(d1, d2, d3, (ctypes.c_ubyte * 8)(*d4))
-
-        # GUID_VIDEO_SUBGROUP / VIDEOIDLE
-        sub = _guid(0x7516B95F, 0xF776, 0x4464, [0x8C, 0x53, 0x06, 0x16, 0x7F, 0x40, 0xCC, 0x99])
-        idle = _guid(0x3C0BC021, 0xC8A8, 0x4E07, [0xA9, 0x73, 0x6B, 0x14, 0xCB, 0xCB, 0x2B, 0x7E])
-
-        class _Sps(ctypes.Structure):
-            _fields_ = [("ACLineStatus", ctypes.c_ubyte), ("BatteryFlag", ctypes.c_ubyte),
-                        ("BatteryLifePercent", ctypes.c_ubyte), ("SystemStatusFlag", ctypes.c_ubyte),
-                        ("BatteryLifeTime", ctypes.c_ulong), ("BatteryFullLifeTime", ctypes.c_ulong)]
-
-        sps = _Sps()
+        sps = _SYSTEM_POWER_STATUS()
         on_dc = bool(kernel32.GetSystemPowerStatus(ctypes.byref(sps))) and sps.ACLineStatus == 0
-        scheme = ctypes.POINTER(_Guid)()
+        scheme = _PGUID()  # module-level pointer type: nothing new is cached per call
         if powrprof.PowerGetActiveScheme(None, ctypes.byref(scheme)) == 0:
             try:
                 value = ctypes.c_ulong(0)
                 read = powrprof.PowerReadDCValueIndex if on_dc else powrprof.PowerReadACValueIndex
-                if read(None, scheme, ctypes.byref(sub), ctypes.byref(idle), ctypes.byref(value)) == 0:
+                if read(None, scheme, ctypes.byref(_GUID_VIDEO_SUBGROUP),
+                        ctypes.byref(_GUID_VIDEOIDLE), ctypes.byref(value)) == 0:
                     out["display_off_after_seconds"] = int(value.value)  # 0 = never
             finally:
                 kernel32.LocalFree(scheme)
