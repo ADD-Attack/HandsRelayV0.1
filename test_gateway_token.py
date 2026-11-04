@@ -60,8 +60,11 @@ def run():
             failures.append(name)
 
     old_home = os.environ.get("HOME")
+    old_profile = os.environ.get("USERPROFILE")
     with tempfile.TemporaryDirectory() as tmp:
         os.environ["HOME"] = tmp
+        # On Windows os.path.expanduser("~") reads USERPROFILE, not HOME.
+        os.environ["USERPROFILE"] = tmp
         try:
             path = appmod._gateway_token_path()
             check("path is under HOME/.HandsRelayV0.1",
@@ -94,10 +97,11 @@ def run():
             check("replacement token differs from short file",
                   token4 != "short" and len(token4) == 32)
         finally:
-            if old_home is None:
-                os.environ.pop("HOME", None)
-            else:
-                os.environ["HOME"] = old_home
+            for name, old in (("HOME", old_home), ("USERPROFILE", old_profile)):
+                if old is None:
+                    os.environ.pop(name, None)
+                else:
+                    os.environ[name] = old
 
     print("FAILED: " + ", ".join(failures) if failures else "ALL PASS")
     return 1 if failures else 0

@@ -104,6 +104,9 @@ def test_yield_response_carries_error_code(hands, monkeypatch):
 # ------------------------------------------------------------------ F3
 
 def _stub_foreground(hands, monkeypatch, title="Muse — Chat", process="chrome.exe"):
+    # The native GetForegroundWindow lookup answers first on a Windows host;
+    # stub it out so the enumerated window below is the foreground.
+    monkeypatch.setattr(hands, "_foreground_window_native", lambda: None)
     monkeypatch.setattr(
         hands,
         "_enum_windows",
@@ -199,6 +202,10 @@ def test_type_aborts_midway_when_owner_activates(hands, monkeypatch):
 
     monkeypatch.setattr(hands, "_probe_lock_state", lambda: (None, None))
     monkeypatch.setattr(hands, "_probe_dwtime", probe_dwtime)
+    # This drives the dwTime fallback; on a Windows host the real low-level
+    # hooks would start and take over (hook mode), as in test_r72_fixround.
+    monkeypatch.setattr(hands._owner_monitor, "ensure_started", lambda wait=0.5: False)
+    monkeypatch.setattr(hands, "_owner_input_snapshot", lambda: None)
     monkeypatch.setattr(hands.time, "sleep", sleep)
     writes = []
     monkeypatch.setattr(hands.pyautogui, "write", write)

@@ -53,6 +53,9 @@ def test_focus_matches_hwnd(hands):
 
 def test_yield_409_carries_foreground_hwnd(hands, monkeypatch):
     monkeypatch.setattr(hands, "_probe_lock_state", lambda: (False, 0.2))
+    # The native GetForegroundWindow lookup answers first on a Windows host;
+    # stub it out so the enumerated windows below define the foreground.
+    monkeypatch.setattr(hands, "_foreground_window_native", lambda: None)
     monkeypatch.setattr(hands, "_enum_windows",
                         lambda: [{"title": "a", "focused": False, "_hwnd": 1},
                                  {"title": "b", "focused": True, "_hwnd": 42}])
@@ -65,6 +68,7 @@ def test_yield_409_carries_foreground_hwnd(hands, monkeypatch):
 
 def test_yield_409_without_foreground_omits_hwnd(hands, monkeypatch):
     monkeypatch.setattr(hands, "_probe_lock_state", lambda: (False, 0.2))
+    monkeypatch.setattr(hands, "_foreground_window_native", lambda: None)
     monkeypatch.setattr(hands, "_enum_windows", lambda: [])
     with hands.app.test_request_context("/click", method="POST", json={}):
         resp, status = hands._yield_if_active()
