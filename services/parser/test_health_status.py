@@ -1,4 +1,4 @@
-"""Tests for the V3-R1 parser health fix (Grok review High #6).
+"""Tests for the R1 parser health fix (Grok review High #6).
 
 The bug: _model_status() called the lazy loaders _get_detector() /
 _get_captioner(), so a bare GET /health — which the gateway probes

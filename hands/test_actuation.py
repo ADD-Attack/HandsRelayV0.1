@@ -1,4 +1,4 @@
-"""Tests for the V3-P4 hands actuation routes (wishlist #3, #4, #6, #9, #19).
+"""Tests for the P4 hands actuation routes (wishlist #3, #4, #6, #9, #19).
 
 Runs anywhere — no Windows, no real desktop: fake pyautogui / tkinter
 modules are injected into sys.modules BEFORE the hands module is loaded
@@ -68,7 +68,7 @@ spec = importlib.util.spec_from_file_location("hands_relay_hands", HANDS_PATH)
 hands = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(hands)
 
-# Integration (V3-P4 + V3-P5 merged /type): the keystroke path now applies
+# Integration (P4 + P5 merged /type): the keystroke path now applies
 # jittered per-char delays by default, so real sleeps would make the
 # 200-char keystroke cases take ~20s each. Sleeps are timing, not logic —
 # stub them out for this test process.

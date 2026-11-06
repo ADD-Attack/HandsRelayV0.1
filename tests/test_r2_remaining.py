@@ -1,4 +1,4 @@
-"""Fixes for HandsRelay v3 R2. Loads the service modules by path."""
+"""Fixes for HandsRelay R2. Loads the service modules by path."""
 import importlib.util
 import inspect
 import os
@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def _load(rel):
     path = ROOT / rel
-    name = "v3r2_" + "_".join(path.with_suffix("").parts[-3:])
+    name = "r2_" + "_".join(path.with_suffix("").parts[-3:])
     spec = importlib.util.spec_from_file_location(name, path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)

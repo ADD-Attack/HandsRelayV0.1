@@ -1,5 +1,7 @@
 # R7.2 fix round — answer to Astra's DEPLOY-NO-GO on `22a9080` (+ Grok)
 
+> **Historical record (v3 line, October 2026).** Branch names, round labels and other "v3" references in this file are kept as shipped history. The relay line is **v4** from R12 on (wishlist #37).
+
 Branch `v3-r7-2-fix-20261020`, based on `v3-r7-2-20261019` @ `22a9080`. Nothing deployed.
 All code is in `hands/hands_relay_hands.py`; tests in `tests/test_r72_fixround.py` unless noted.
 

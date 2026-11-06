@@ -1,5 +1,7 @@
 # TAKEOVER BRIEF — HandsRelay build (Opus session, 2026-10-20)
 
+> **Historical record (v3 line, October 2026).** Branch names, round labels and other "v3" references in this file are kept as shipped history. The relay line is **v4** from R12 on (wishlist #37).
+
 You are the builder for the HandsRelay update, taking over from Astra (paused by owner direction). You work in the shared clone:
 
 - Workspace: /home/openclaw/.openclaw/workspace-studio-3d/relay-r9-20261020

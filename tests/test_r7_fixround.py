@@ -16,7 +16,7 @@ tests pin the fixes:
   Low 1   junk containers / nonfinite values / wrong-typed PC fields
           never raise in the data layer.
 
-RelayApp is driven the way test_v3r2_remaining drives it: a bare
+RelayApp is driven the way test_r2_remaining drives it: a bare
 object carrying only the attributes the method under test touches,
 with the poll's thread captured and run synchronously.
 """
@@ -155,7 +155,7 @@ def _bare_app(gw=None):
     obj.log_line = lambda *a: None
     # _poll re-schedules itself via self.root.after(POLL_MS, self._poll);
     # the bare fake needs the attribute the real instance gets from its
-    # class (same pattern as test_v3r2_remaining).
+    # class (same pattern as test_r2_remaining).
     obj._poll = lambda: None
     return obj
 

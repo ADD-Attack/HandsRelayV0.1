@@ -1,4 +1,4 @@
-"""Tests for the V3-R1 hands /health gate exemption (Grok review High #5).
+"""Tests for the R1 hands /health gate exemption (Grok review High #5).
 
 The bug: the hands before_request gate applied the failed-guess
 lockout AND the secret check to /health as well, contradicting the

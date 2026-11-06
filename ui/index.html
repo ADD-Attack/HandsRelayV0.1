@@ -26,7 +26,7 @@
     <span class="mark-tile"><svg class="ico mark"><use href="#i-mark"/></svg></span>
     <div>
       <div class="brand-name">HandsRelay</div>
-      <div class="brand-sub">hands · gateway · parser</div>
+      <div class="brand-sub" id="brand-sub">hands · gateway · parser · line v4</div>
     </div>
   </div>
 
@@ -42,6 +42,7 @@
       <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 4l10 6-10 6z"/></svg>
       <span id="start-label">Start</span>
     </button>
+    <button class="btn btn-ghost" id="btn-pause" disabled title="Pause the agent while you drive: its acts are refused and polling agents are told to wait. Only you can resume.">Pause agent</button>
     <button class="btn btn-danger" id="btn-stop" title="Stops all three services and closes the relay">
       <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="5" width="10" height="10" rx="2"/></svg>
       Stop
@@ -92,6 +93,11 @@
       <div class="mode-row">
         <span class="chip chip-quiet" id="agent-mode" title="Watcher: eyes only (screen polling, no actuation). Hands control: claim held.">no agent</span>
         <span class="mode-meta" id="watcher-setting">watcher timeout —</span>
+      </div>
+      <!-- wishlist #32: live watch state (paused / watching / polling / not watching) -->
+      <div class="mode-row" id="watch-row" title="Is the agent looking at the screen right now? Updated every second.">
+        <span class="chip chip-quiet" id="watch-state">—</span>
+        <span class="mode-meta" id="watch-last">no screen reads yet</span>
       </div>
     </div>
   </section>

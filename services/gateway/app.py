@@ -47,7 +47,7 @@ PARSER_URL = os.environ.get("PARSER_URL", "http://parser:5011").strip().rstrip("
 
 HANDS_OPS = {
     "move", "click", "type", "key", "scroll",
-    # V3-P4 (wishlist #3, #4, #6, #19):
+    # P4 (wishlist #3, #4, #6, #19):
     "hotkey", "break", "drag", "focus", "clipboard_set",
 }
 # Op -> hands path, for ops whose hands route is not "/<op>".
@@ -124,12 +124,88 @@ def _push_claim_locked(claim, now):
     """Queue a claim-state push to the hands; call with _claim_lock held."""
     global _claim_push_seq
     _claim_push_seq += 1
+    held = claim is not None and _pause is None  # wishlist #31: no resting float while paused
     payload = {
-        "held": claim is not None,
-        "expires_in": max(0.0, float(claim["expires_at"]) - now) if claim else 0.0,
+        "held": held,
+        "expires_in": max(0.0, float(claim["expires_at"]) - now) if held else 0.0,
         "seq": _claim_push_seq,
     }
     threading.Thread(target=_post_claim_to_hands, args=(payload,), daemon=True).start()
+
+
+# ---------------------------------------------------------------------------
+# Wishlist #31 (pause) and #32 (watch tracker), owner 2026-10-21.
+# Paused: acts are refused (409 error_code "paused"), queued acts are held
+# until resume or their deadline, the resting hand stops, and every
+# response carries X-Relay-Paused: 1 so a polling agent can suspend
+# cleanly. The owner pauses from the relay window; an agent may pause
+# itself (POST /v1/pause) but can never lift the owner's pause.
+# Polling is tracked from every authenticated screen read, so the window
+# can show "last poll Ns ago" even for agents that never register as
+# watchers.
+# ---------------------------------------------------------------------------
+RELAY_LINE = "v4"  # wishlist #37: the product line this relay reports
+POLL_ROUTES = ("/v1/screen", "/v1/screen/hash", "/v1/screen/wait", "/v1/wait")
+_pause_lock = threading.Lock()
+_pause = None  # {"by": "owner"|"agent", "holder", "reason", "since"} or None
+_last_poll = {"at": None, "route": None, "watcher": None}
+
+
+def _pause_state():
+    with _pause_lock:
+        return dict(_pause) if _pause is not None else None
+
+
+def set_pause(paused, by="owner", holder="", reason=""):
+    """Pause or resume the relay. Returns (ok, pause_state_or_None, error).
+
+    The packaged app calls this for the owner's Pause/Resume button
+    (by="owner"); POST /v1/pause and /v1/resume call it with by="agent".
+    An owner pause outranks an agent pause and only the owner lifts it.
+    """
+    global _pause
+    now = time.time()
+    with _pause_lock:
+        before = dict(_pause) if _pause is not None else None
+        if paused:
+            if _pause is None or (by == "owner" and _pause["by"] != "owner"):
+                _pause = {
+                    "by": "owner" if by == "owner" else "agent",
+                    "holder": str(holder or "")[:HOLDER_MAX_CHARS],
+                    "reason": str(reason or "")[:PURPOSE_MAX_CHARS],
+                    "since": now,
+                }
+        else:
+            if _pause is not None and _pause["by"] == "owner" and by != "owner":
+                return False, dict(_pause), (
+                    "paused by the owner - only the owner can resume (from the relay window)"
+                )
+            _pause = None
+        after = dict(_pause) if _pause is not None else None
+    if (before is None) != (after is None) or (before and after and before["by"] != after["by"]):
+        who = after["by"] if after else by
+        log_event(f"relay {'PAUSED' if after else 'resumed'} by {who}"
+                  + (f" ({after['holder']})" if after and after["holder"] else ""))
+        with _claim_lock:  # the resting hand follows the pause
+            _push_claim_locked(_current_claim_locked(now), now)
+    return True, after, None
+
+
+_wall_clock = time.time  # bound once: tests may swap the module's `time` for a fake
+
+
+def _note_poll(route):
+    """Record an authenticated screen read for the watch tracker (#32)."""
+    _last_poll.update(
+        at=_wall_clock(), route=route, watcher=(request.args.get("watcher") or "")[:80] or None
+    )
+
+
+def _poll_state(now=None):
+    now = _wall_clock() if now is None else now
+    out = dict(_last_poll)
+    out["age_s"] = None if out["at"] is None else max(0.0, now - out["at"])
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -475,11 +551,15 @@ def gate():
                 f"Authentication is paused for {LOCKOUT_SECONDS // 60} minutes.",
             )
         return jsonify({"ok": False, "error": "bad token"}), 401
+    if request.path in POLL_ROUTES:
+        _note_poll(request.path)  # wishlist #32: the window shows when we were last polled
 
 
 @app.after_request
 def noindex(resp):
     resp.headers["X-Robots-Tag"] = "noindex, nofollow"
+    if _pause is not None:
+        resp.headers["X-Relay-Paused"] = "1"  # wishlist #31: pollers can suspend cleanly
     return resp
 
 
@@ -572,8 +652,36 @@ def info():
             "pc_state": pc_state,
             "watchers": _current_watchers(),
             "watcher_timeout_seconds": _watcher_timeout_setting(),
+            "paused": _pause is not None,
+            "pause": _pause_state(),
+            "last_poll": _poll_state(),
+            "relay_line": RELAY_LINE,
         }
     )
+
+
+@app.get("/v1/pause")
+def pause_status():
+    state = _pause_state()
+    return jsonify({"ok": True, "paused": state is not None, "pause": state})
+
+
+@app.post("/v1/pause")
+def pause():
+    """{holder?, reason?}: the agent pauses itself (wishlist #31)."""
+    body = _json_body()
+    _ok, state, _err = set_pause(True, by="agent", holder=body.get("holder"), reason=body.get("reason"))
+    return jsonify({"ok": True, "paused": True, "pause": state})
+
+
+@app.post("/v1/resume")
+def resume():
+    """Lift an agent pause. An owner pause is lifted only from the window."""
+    body = _json_body()
+    ok, state, err = set_pause(False, by="agent", holder=body.get("holder"))
+    if not ok:
+        return jsonify({"ok": False, "error": err, "paused": True, "pause": state}), 403
+    return jsonify({"ok": True, "paused": False, "pause": None})
 
 
 @app.get("/v1/watch")
@@ -1301,9 +1409,31 @@ def _is_yield_conflict(status, result):
         return False
     code = result.get("error_code")
     if code is not None:
-        return code in ("yield", "locked")
+        # "paused" (wishlist #31): held like a yield until resume or deadline.
+        return code in ("yield", "locked", "paused")
     error = str(result.get("error") or "").lower()
     return "yield" in error or "user active" in error
+
+
+OWNER_ABORT_CODES = ("type_aborted", "failsafe")
+
+
+def _owner_abort(status, result):
+    """An act the owner's safety system stopped on purpose (wishlist #35):
+    the type guard saw the owner take over, or the owner hit the failsafe.
+    Its receipt reads "aborted", not "failed" -- the relay did not fail."""
+    return (
+        status == 409
+        and isinstance(result, dict)
+        and result.get("error_code") in OWNER_ABORT_CODES
+    )
+
+
+def _abort_fields(result):
+    return {
+        "aborted_by": "owner",
+        "abort_reason": result.get("abort_reason") or result.get("error_code"),
+    }
 
 
 def _store_receipt(receipt, payload=None):
@@ -1390,6 +1520,12 @@ def _pump_receipt(receipt, now):
                 receipt["state"] = "refused-yielded"
                 _pending_payloads.pop(receipt["id"], None)
             return receipt
+        if _owner_abort(status, result):
+            receipt["state"] = "aborted"  # wishlist #35: the owner took over, by design
+            receipt.update(_abort_fields(result))
+            receipt["result"] = result
+            _pending_payloads.pop(receipt["id"], None)
+            return receipt
         if failed or status is None:
             receipt["state"] = "failed"
             receipt["result"] = None
@@ -1460,6 +1596,15 @@ def _forward_act(op, payload):
     # Review E6: a list/dict op used to raise TypeError (unhashable) -> 500.
     if not isinstance(op, str) or op not in HANDS_OPS:
         return 400, {"ok": False, "error": f"unknown op: {_short(op)!r}"}
+    pause = _pause_state()
+    if pause is not None:  # wishlist #31
+        who = "the owner" if pause["by"] == "owner" else "the agent"
+        return 409, {
+            "ok": False,
+            "error": f"relay paused by {who} - act refused",
+            "error_code": "paused",
+            "pause": pause,
+        }
     path = HANDS_OP_PATHS.get(op, op)
     try:
         r = requests.post(
@@ -1592,11 +1737,13 @@ def act_queued():
         # the response body so the caller can reconcile later.
         now = time.time()
         applied = isinstance(status, int) and 200 <= status < 300
+        aborted = _owner_abort(status, result)
         receipt = {
             "id": uuid.uuid4().hex,
             "op": _short(op),
             "param_keys": _param_keys(payload),
-            "state": "applied" if applied else "failed",
+            "state": "applied" if applied else ("aborted" if aborted else "failed"),
+            **(_abort_fields(result) if aborted else {}),
             # R9 (#21): which path settled it — "direct" here,
             # "after-hold" when the retry pump applies a held act.
             "applied_via": "direct" if applied else None,

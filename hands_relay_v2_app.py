@@ -73,6 +73,7 @@ GATEWAY_PORT = 5010
 PARSER_PORT = 5011
 HANDS_URL = "http://127.0.0.1:5000"
 POLL_MS = 5000
+RELAY_LINE = "v4"  # wishlist #37: the product line this build reports
 
 SERVICE_FILES = {
     "hands": "hands/hands_relay_hands.py",
@@ -428,6 +429,9 @@ def build_dashboard_model(info, claim, queue, reserved_for, receipts, now):
                 and math.isfinite(expires_at)
                 else None
             ),
+            # Wishlist #34: the absolute expiry, so the window can count
+            # down live against the server clock between polls.
+            "expires_at": _finite_or_none(expires_at),
         }
     watchers = [
         name
@@ -435,6 +439,8 @@ def build_dashboard_model(info, claim, queue, reserved_for, receipts, now):
         if not claim_model or name != claim_model["holder"]
     ]
     wt = _finite_or_none(info_dict.get("watcher_timeout_seconds"))
+    pause = _pause_or_none(info_dict.get("pause"))
+    last_poll = _last_poll_or_none(info_dict.get("last_poll"))
     return {
         "services": services,
         "claim": claim_model,
@@ -446,18 +452,66 @@ def build_dashboard_model(info, claim, queue, reserved_for, receipts, now):
         "pc": pc,
         "feed": summarize_receipts(receipts, now),
         "counts": receipt_state_counts(receipts),
+        "pause": pause,
+        "last_poll": last_poll,
+        "watch_state": watch_state(pause, watchers, last_poll, now),
     }
+
+
+WATCH_POLLING_WINDOW_S = 60  # a screen read this recent counts as "polling" (#32)
+
+
+def _pause_or_none(value):
+    """Wishlist #31: {"by", "holder", "reason", "since"} with checked types."""
+    if not isinstance(value, dict) or value.get("by") not in ("owner", "agent"):
+        return None
+    return {
+        "by": value["by"],
+        "holder": str(value.get("holder") or ""),
+        "reason": str(value.get("reason") or ""),
+        "since": _finite_or_none(value.get("since")),
+    }
+
+
+def _last_poll_or_none(value):
+    """Wishlist #32: the gateway's last authenticated screen read."""
+    if not isinstance(value, dict) or _finite_or_none(value.get("at")) is None:
+        return None
+    return {
+        "at": float(value["at"]),
+        "route": str(value.get("route") or ""),
+        "watcher": str(value["watcher"]) if value.get("watcher") else None,
+    }
+
+
+def watch_state(pause, watchers, last_poll, now):
+    """What the agent is doing with its eyes (wishlist #32):
+    "paused" | "watching" (a registered watcher) | "polling" (screen reads
+    in the last minute) | "idle"."""
+    if pause:
+        return "paused"
+    if watchers:
+        return "watching"
+    if last_poll and float(now) - last_poll["at"] < WATCH_POLLING_WINDOW_S:
+        return "polling"
+    return "idle"
 
 
 def format_diagnostics(model, stamp):
     """One-click diagnostics text (clipboard + log) from a model."""
     svc = model.get("services", {})
     lines = [
-        f"HandsRelay diagnostics — {stamp}",
+        f"HandsRelay diagnostics — {stamp} (line {RELAY_LINE})",
         "Services: gateway {g} · hands {h} · parser {p}".format(
             g=svc.get("gateway", "?"), h=svc.get("hands", "?"), p=svc.get("parser", "?")
         ),
     ]
+    pause = model.get("pause")
+    if pause:
+        who = pause["by"] + (f" ({pause['holder']})" if pause.get("holder") else "")
+        lines.append(f"PAUSED by {who}")
+    if model.get("watch_state"):
+        lines.append(f"Watch: {model['watch_state']}")
     claim = model.get("claim")
     if claim:
         text = f"Claim: {claim['holder']}"
@@ -737,7 +791,41 @@ class RelayApp:
             "autostart": _autostart_enabled(),
             "token_ready": bool(self.token),
             "resting_hand": self._resting_view(model),
+            # Wishlist #32/#34: live state, read on every window tick, not
+            # only on the 5 s dashboard poll.
+            "server_time": time.time(),
+            "relay_line": RELAY_LINE,
+            **self._live_gateway_state(),
         }
+
+    def _live_gateway_state(self):
+        gw = getattr(self, "_gateway_module", None)
+        out = {"pause": None, "last_poll": None, "claim_expires_at": None}
+        if gw is None:
+            return out
+        try:
+            out["pause"] = _pause_or_none(gw._pause_state())
+            out["last_poll"] = _last_poll_or_none(gw._poll_state())
+            claim = gw._current_claim()
+            if claim:
+                out["claim_expires_at"] = _finite_or_none(claim.get("expires_at"))
+        except Exception:
+            pass  # an older gateway module: the 5 s model still carries these
+        return out
+
+    def set_pause(self, paused):
+        """The owner's Pause / Resume button (wishlist #31). Returns the
+        pause state, or raises RuntimeError before the gateway runs."""
+        gw = getattr(self, "_gateway_module", None)
+        setter = getattr(gw, "set_pause", None)
+        if not callable(setter):
+            raise RuntimeError("start the services first")
+        _ok, state, _err = setter(bool(paused), by="owner")
+        self.log_line(
+            "Paused: the agent's acts are refused and polling agents are told to wait."
+            if paused else "Resumed: the agent may act again."
+        )
+        return state
 
     def _resting_view(self, model):
         pc = (model or {}).get("pc") or {}
@@ -1426,6 +1514,18 @@ def build_ui_server(relay, ui_key, port_ref=None):
         # Answer first, then stop (stop() ends the process).
         relay.root.after(200, relay.stop)
         return flask.jsonify({"ok": True})
+
+    @ui.post("/api/pause")
+    def _pause():
+        body = flask.request.get_json(force=True, silent=True)
+        paused = body.get("paused") if isinstance(body, dict) else None
+        if not isinstance(paused, bool):
+            return flask.jsonify({"ok": False, "error": "paused must be true or false"}), 400
+        try:
+            state = relay.set_pause(paused)
+        except RuntimeError as exc:
+            return flask.jsonify({"ok": False, "error": str(exc)}), 409
+        return flask.jsonify({"ok": True, "paused": state is not None, "pause": state})
 
     @ui.post("/api/diagnostics")
     def _diag():

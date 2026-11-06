@@ -1,4 +1,6 @@
 # Astra implementation packet — R7.2 fix round + R9 wishlist build + R9 web GUI
+
+> **Historical record (v3 line, October 2026).** Branch names, round labels and other "v3" references in this file are kept as shipped history. The relay line is **v4** from R12 on (wishlist #37).
 Assembled 2026-10-20 by Muse (operator/producer) for a fresh Astra session.
 Owner direction (Christopher, 2026-10-20 05:21 CDT): **Astra implements this round** — you are the builder, not the reviewer.
 

@@ -1,11 +1,11 @@
-"""HandsRelay v3 R4 improvement-round tests.
+"""HandsRelay R4 improvement-round tests.
 
 Covers: F2 (pyautogui.PAUSE), F3 (expect_focus guard), F4 (receipt
 for every queued act + terminal-first eviction), F5 (/break and
 /clipboard/set behind the yield), F6 (locked desktop yields), F7
 (mid-type abort), F11 (structured error_code classification),
 F12 (parser non-JSON guard). Loads the service modules by path,
-mirroring tests/test_v3r2_remaining.py.
+mirroring tests/test_r2_remaining.py.
 """
 import importlib.util
 import sys
@@ -16,7 +16,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def _load(rel, tag="v3r4"):
+def _load(rel, tag="r4"):
     path = ROOT / rel
     name = tag + "_" + "_".join(path.with_suffix("").parts[-3:])
     spec = importlib.util.spec_from_file_location(name, path)
@@ -50,7 +50,7 @@ def _body(resp):
 def test_pause_is_zero_after_hands_import():
     pag = sys.modules["pyautogui"]
     pag.PAUSE = 0.15  # the old global tax; importing the hands must clear it
-    _load("hands/hands_relay_hands.py", tag="v3r4_pause")
+    _load("hands/hands_relay_hands.py", tag="r4_pause")
     assert pag.PAUSE == 0
 
 

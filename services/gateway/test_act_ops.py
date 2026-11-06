@@ -1,4 +1,4 @@
-"""Tests for the V3-P4 gateway act ops (wishlist #3, #4, #6, #9, #19).
+"""Tests for the P4 gateway act ops (wishlist #3, #4, #6, #9, #19).
 
 Runs anywhere — no live hands needed: gateway.requests.post / .get are
 monkeypatched with recorders.

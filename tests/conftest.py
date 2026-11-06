@@ -2,7 +2,7 @@
 
 The repo's existing hands tests inject fake pyautogui / tkinter modules
 into sys.modules before loading the hands module (see
-hands/test_actuation.py). tests/test_v3r2_remaining.py loads the hands
+hands/test_actuation.py). tests/test_r2_remaining.py loads the hands
 and packaged-app modules directly, so it needs the same fakes present
 when its module-scoped fixtures execute. On the Windows build host both
 modules import for real; in the operator's Linux test venv they do not.

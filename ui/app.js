@@ -16,14 +16,19 @@
 
   const $ = (id) => document.getElementById(id);
   const SERVICES = ["hands", "gateway", "parser"];
+  // Wishlist #35: "aborted" = the owner took over (type guard / failsafe),
+  // by design; it must not read as a red "failed".
   const STATE_CHIP = {
     applied: "chip-ok", held: "chip-held", "refused-yielded": "chip-bad",
-    failed: "chip-bad", expired: "chip-quiet",
+    failed: "chip-bad", expired: "chip-quiet", aborted: "chip-info",
   };
   const STATE_COLOR = {
     applied: "#3ddc97", held: "#ffb547", "refused-yielded": "#ff7a59",
-    failed: "#ff5c6c", expired: "#5b6376",
+    failed: "#ff5c6c", expired: "#5b6376", aborted: "#7a8cff",
   };
+  const STATE_LABEL = { aborted: "aborted — owner" };
+  const POLLING_WINDOW_S = 60;  // matches the app's WATCH_POLLING_WINDOW_S
+  let paused = false;
 
   let logSeq = 0;
   let started = false;
@@ -115,14 +120,19 @@
     }
   }
 
-  function renderClaim(m) {
+  function renderClaim(m, view) {
     const claim = m && m.claim;
     $("claim").dataset.held = claim ? "1" : "0";
     $("card-control").dataset.held = claim ? "1" : "0";  // R11 #8: icon green while held
     if (claim) {
       setText($("claim-holder"), claim.holder);
       setText($("claim-purpose"), claim.purpose || "No purpose given");
-      const left = claim.expires_in_s;
+      // Wishlist #34: count down live against the server clock (fresh on
+      // every 1 s tick) instead of showing the 5 s poll's snapshot.
+      const expiresAt = (view && view.claim_expires_at) || claim.expires_at;
+      const left = typeof expiresAt === "number" && view && typeof view.server_time === "number"
+        ? Math.max(0, expiresAt - view.server_time)
+        : claim.expires_in_s;
       setText($("claim-expiry"), left == null ? "no expiry" : `expires in ${dur(left)}`);
       const pct = left == null ? 100 : Math.max(2, Math.min(100, (left / 1800) * 100));
       $("claim-meter").style.width = `${pct}%`;
@@ -162,6 +172,39 @@
     if (watchers.length) parts.push(mode === "watcher" ? watchers.join(", ") : `${watchers.length} watching`);
     parts.push(wt == null ? "watcher timeout —" : `watcher timeout ${dur(wt)}`);
     setText($("watcher-setting"), parts.join(" · "));
+  }
+
+  // Wishlist #31/#32: is the agent looking right now, and is it paused?
+  function renderWatch(view) {
+    const m = view.model;
+    const pause = view.pause || (m && m.pause) || null;
+    const lp = view.last_poll || (m && m.last_poll) || null;
+    const now = typeof view.server_time === "number" ? view.server_time : Date.now() / 1000;
+    const age = lp && typeof lp.at === "number" ? Math.max(0, now - lp.at) : null;
+    const watchers = (m && m.watchers) || [];
+    let label = "Not watching";
+    let cls = "chip chip-quiet";
+    if (!view.started) {
+      label = "—";
+    } else if (pause) {
+      label = pause.by === "owner" ? "Paused by you" : "Paused by agent";
+      cls = "chip chip-held";
+    } else if (watchers.length) {
+      label = "Watching";
+      cls = "chip chip-info";
+    } else if (age != null && age < POLLING_WINDOW_S) {
+      label = "Polling";
+      cls = "chip chip-ok";
+    }
+    setText($("watch-state"), label, cls);
+    const bits = [age == null ? "no screen reads yet" : `last screen read ${dur(age)} ago`];
+    if (lp && lp.watcher) bits.push(`by ${lp.watcher}`);
+    if (pause && typeof pause.since === "number") bits.push(`paused ${dur(now - pause.since)}`);
+    setText($("watch-last"), bits.join(" · "));
+    paused = !!pause;
+    const btn = $("btn-pause");
+    btn.disabled = !view.started || busy;  // the owner can lift any pause
+    setText(btn, paused ? "Resume agent" : "Pause agent");
   }
 
   function renderDesktop(m) {
@@ -229,7 +272,7 @@
         if (i === 2) {
           const chip = document.createElement("span");
           chip.className = `chip ${STATE_CHIP[row.state] || "chip-info"}`;
-          chip.textContent = row.state;
+          chip.textContent = STATE_LABEL[row.state] || row.state;
           td.appendChild(chip);
         } else {
           td.textContent = v;
@@ -312,7 +355,9 @@
     const auto = $("autostart");
     if (!auto.matches(":focus")) auto.checked = !!view.autostart;
     renderTiles(view);
-    renderClaim(view.model);
+    if (view.relay_line) setText($("brand-sub"), `hands · gateway · parser · line ${view.relay_line}`);
+    renderClaim(view.model, view);
+    renderWatch(view);
     renderDesktop(view.model);
     renderFeed(view.model);
     appendLog(view.log || []);
@@ -345,6 +390,19 @@
     const { data } = await api("/api/start", { method: "POST" });
     busy = false;
     if (!data.ok) toast("Start failed", true);
+  });
+
+  $("btn-pause").addEventListener("click", async () => {
+    const want = !paused;
+    $("btn-pause").disabled = true;
+    try {
+      const { data } = await api("/api/pause", { method: "POST", body: { paused: want } });
+      if (!data.ok) return toast(data.error || "Could not change pause", true);
+      paused = !!data.paused;
+      toast(paused ? "Agent paused — its acts are refused until you resume" : "Agent resumed", false);
+    } finally {
+      $("btn-pause").disabled = false;
+    }
   });
 
   $("btn-stop").addEventListener("click", async () => {

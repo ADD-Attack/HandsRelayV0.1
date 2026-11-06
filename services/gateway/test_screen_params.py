@@ -1,4 +1,4 @@
-"""Tests for the monitor/region screen params + /v1/monitors (v3 P5).
+"""Tests for the monitor/region screen params + /v1/monitors (P5).
 
 Runs anywhere with the gateway's deps installed — no live hands needed:
 _fetch_screenshot is stubbed with a synthetic PNG and requests.get is

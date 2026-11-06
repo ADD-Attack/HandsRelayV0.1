@@ -291,7 +291,7 @@ automated tests.
    returns 501.
 
 
-## Integration notes (coordinator, V3 merge of P2–P6)
+## Integration notes (coordinator, merge of P2–P6)
 
 The five package branches were built in parallel against the same base
 and merged in order P2 -> P3 -> P4 -> P5 -> P6. Decisions taken at the
@@ -445,3 +445,35 @@ docs/REVIEW-FIXES-2026-11.md.
     names the bind address; with `RELAY_GATEWAY_HOST=127.0.0.1` set before
     launching, the gateway is no longer reachable from another machine on
     the LAN.
+
+## R12 — wishlist #31–#37 (live checks owed)
+
+Stub-tested in tests/test_wishlist_31_37.py; these need the real PC and a
+rebuilt "HandsRelay v2.exe".
+
+1. **#31 pause.** Start the app, have an agent take the claim, then press
+   **Pause agent**. `POST /v1/act {"op": "move", ...}` → 409
+   `"error_code": "paused"`; every response carries `X-Relay-Paused: 1`;
+   the resting hand stops floating. A queued act stays `held`.
+   `POST /v1/resume` from the agent → 403. Press **Resume agent**: the
+   held act runs and the float comes back.
+2. **#32 tracker.** With an agent polling `/v1/screen/hash?watcher=muse`
+   every few seconds, the watch row reads "Polling" (or "Watching" with
+   `POST /v1/watch`) and "last screen read 2s ago · by muse". Stop the
+   agent: after 60 s it reads "Not watching".
+3. **#33 paste guard.** `POST /v1/act {"op": "type", "text": <300 chars>}`
+   into Notepad and move the mouse while it runs (or Alt+Tab away): the
+   act answers 409 `type_aborted`, `abort_reason` owner or
+   foreground_changed, nothing is pasted, and the clipboard still holds
+   what you copied before. A clean run reports `"guarded": true,
+   "guard_scope": "pre-paste"`.
+4. **#34 countdown.** Leave the window open with a claim held: the "expires
+   in" countdown drops by one every second.
+5. **#35 aborted.** The aborted type from step 3 shows in Recent Acts as a
+   blue "aborted — owner" chip, not a red "failed".
+6. **#36 glide.** With a claim held and the agent idle, watch the pointer
+   closely: it drifts smoothly between rest offsets (no 2-3 px jumps).
+   Moving the mouse yourself still kills the float at once.
+7. **#37 line.** The window subtitle and Diagnostics read "line v4", and
+   `GET /v1/info` has `"relay_line": "v4"`. Then rename the install folder,
+   SMB share and shortcuts on the PC (local agent; not in this repo).

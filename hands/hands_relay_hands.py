@@ -46,7 +46,7 @@ WHAT MUSE CAN DO WITH IT (unchanged from cursor_relay.py)
   POST /scroll  {clicks}    scroll
   Every call except /health needs header  X-Secret: <the app's secret>
 
-ADDED IN V3-P4 (wishlist #3, #4, #6, #9, #19) — same X-Secret gate:
+ADDED IN P4 (wishlist #3, #4, #6, #9, #19) — same X-Secret gate:
   POST /hotkey  {keys: ["ctrl", "l"]}   press a true key chord
   POST /break   {times?: 1..3}          Ctrl+C chord(s) — see its docstring
   POST /drag    {x1, y1, x2, y2, button?, duration?}
@@ -61,7 +61,7 @@ ADDED IN V3-P4 (wishlist #3, #4, #6, #9, #19) — same X-Secret gate:
                                         reads in the app window.
   POST /type also accepts {method: "auto"|"paste"|"keys"}: long text can
   go through the clipboard (paste) instead of slow keystrokes.
-CAPTURE + INPUT REALISM (v3)
+CAPTURE + INPUT REALISM (P5)
   GET /screenshot?monitor=N   capture monitor N (0-based) only
   GET /screenshot?region=x,y,w,h
                                capture that rect in virtual-desktop coords
@@ -108,7 +108,7 @@ SHARED_SECRET = secrets_mod.token_urlsafe(24)
 
 pyautogui.FAILSAFE = True
 # R4 (F2): PAUSE stays 0. pyautogui's PAUSE sleeps after EVERY call, and
-# the v3 input-realism planners (_plan_path, _plan_key_delays) already
+# the P5 input-realism planners (_plan_path, _plan_key_delays) already
 # own the deliberate delay budget — a global 0.15 s tax per call made a
 # ~50-step mouse path pay ~7.5 s on top of its planned 0.3-1.1 s and
 # capped typing at ~3-5 chars/s regardless of the jitter plan. FAILSAFE
@@ -927,6 +927,14 @@ def click():
     }
 
 
+class _PasteAborted(Exception):
+    """The owner's checks stopped a paste before Ctrl+V (wishlist #33).
+
+    Never caught by _type_dispatch's keystroke fallback: the owner took
+    over, so typing the text by keys instead would defeat the guard.
+    """
+
+
 def _type_dispatch(method, keys_fn, paste_fn, text):
     """Pick the type path; returns (method_used, note)."""
     if method == "keys":
@@ -934,14 +942,43 @@ def _type_dispatch(method, keys_fn, paste_fn, text):
     if method == "paste":
         try:
             return paste_fn(), None
+        except _PasteAborted:
+            raise
         except Exception as exc:
             return keys_fn(), f"paste requested but unavailable ({exc}); used keys"
     if len(text) > 120 and _clipboard_backend() is not None:
         try:
             return paste_fn(), None
+        except _PasteAborted:
+            raise
         except Exception as exc:
             return keys_fn(), f"paste failed ({exc}); used keys"
     return keys_fn(), None
+
+
+_GUARD_SCOPES = {"keys": "keystroke", "paste": "pre-paste"}
+
+
+def _guard_fields(mode, method_used):
+    """Owner-guard fields for every /type response (wishlist #33).
+
+    `owner_guard` used to be null on the paste path with nothing else to
+    flag it, so an operator could believe an unguarded type was guarded.
+    Now `guarded` is always present, and an unguarded type carries a
+    warning that cannot be missed.
+    """
+    guarded = mode in ("hook", "dwtime")
+    out = {
+        "owner_guard": mode,
+        "guarded": guarded,
+        "guard_scope": _GUARD_SCOPES.get(method_used) if guarded else None,
+    }
+    if not guarded:
+        out["warning"] = (
+            "UNGUARDED: no owner-takeover check ran for this type "
+            "(no input probe on this host, or jitter=false)"
+        )
+    return out
 
 
 @app.post("/type")
@@ -1034,6 +1071,14 @@ def type_text():
         backend = _clipboard_backend()
         if backend is None:
             raise RuntimeError("clipboard unavailable on this host")
+        # Wishlist #33: the paste path used to run with no owner check after
+        # the door, and reported owner_guard null. It now samples the same
+        # owner guard as the keystroke path, re-checks the lock, and pins
+        # the window the paste was aimed at -- right before the single
+        # keystroke (Ctrl+V) that lands the whole text.
+        guard = _TypeOwnerGuard()
+        state["guard"] = guard.mode
+        aimed_at = _foreground_hwnd()
         saved, readable = None, False
         try:
             saved = backend.get_text()
@@ -1042,6 +1087,14 @@ def type_text():
             pass  # unreadable clipboard: paste anyway, skip the restore
         try:
             backend.set_text(text)
+            if guard.sample():
+                state["reason"] = "owner"
+            elif _probe_locked() is True:
+                state["reason"] = "locked"
+            elif aimed_at is not None and _foreground_hwnd() != aimed_at:
+                state["reason"] = "foreground_changed"
+            if state["reason"]:
+                raise _PasteAborted(state["reason"])
             pyautogui.hotkey("ctrl", "v")
             if readable:
                 # Give the target app a beat to consume the paste before the
@@ -1055,8 +1108,31 @@ def type_text():
                     pass
         return "paste"
 
-    with _input("keys"):
-        method_used, note = _type_dispatch(method, _keys, _paste, text)
+    try:
+        with _input("keys"):
+            method_used, note = _type_dispatch(method, _keys, _paste, text)
+    except _PasteAborted:
+        reason = state["reason"]
+        return (
+            jsonify(
+                {
+                    "ok": False,
+                    "error": {
+                        "locked": "desktop locked — paste aborted before landing",
+                        "foreground_changed": "foreground changed — paste aborted before landing",
+                    }.get(reason, "owner became active — paste aborted before landing"),
+                    "error_code": "type_aborted",
+                    "abort_reason": reason,
+                    "aborted": True,
+                    "chars_typed": 0,
+                    "chars": len(text),
+                    "method_used": "paste",
+                    "elapsed_seconds": round(time.monotonic() - started, 3),
+                    **_guard_fields(state["guard"], "paste"),
+                }
+            ),
+            409,
+        )
 
     if method_used == "keys" and typed < len(text):
         return (
@@ -1077,7 +1153,6 @@ def type_text():
                     ),
                     "error_code": "type_aborted",
                     "abort_reason": state["reason"],
-                    "owner_guard": state["guard"],
                     "aborted": True,
                     "chars_typed": typed,
                     "chars": len(text),
@@ -1085,6 +1160,7 @@ def type_text():
                     "elapsed_seconds": round(time.monotonic() - started, 3),
                     "delays_planned": len(delays),
                     "planned_seconds": sum(delays[:typed]),
+                    **_guard_fields(state["guard"], "keys"),
                 }
             ),
             409,
@@ -1092,7 +1168,7 @@ def type_text():
     resp = {
         "ok": True,
         "method_used": method_used,
-        "owner_guard": state["guard"],
+        **_guard_fields(state["guard"], method_used),
         "chars": len(text),
         "elapsed_seconds": round(time.monotonic() - started, 3),
         "delays_planned": len(delays),
@@ -1725,6 +1801,7 @@ class _RestingHand:
         self.next_at = 0.0
         self.moves = 0
         self.kills = 0
+        self._glide = []  # pending (x, y, delay_after) pixels of the current float step
         self._stop = threading.Event()
         self._thread = None
 
@@ -1775,6 +1852,7 @@ class _RestingHand:
         self.offset = (0.0, 0.0)
         self.last_pos = None
         self.baseline_tick = None
+        self._glide = []
 
     def status(self):
         now = self._clock()
@@ -1812,14 +1890,23 @@ class _RestingHand:
             if _LEDGER.owner_input_since(self.baseline_tick, raw_idle, now_tick) or pos != self.last_pos:
                 self._end(killed=True)  # the owner's hand is on the mouse
                 return self.POLL
-            if now < self.next_at:
-                return min(self.POLL, self.next_at - now)
-            offset, wait = motion.plan_rest(self.offset, self.intensity(now), self.rng)
-            self.next_at = now + wait
-            target = (int(round(self.anchor[0] + offset[0])), int(round(self.anchor[1] + offset[1])))
-            self.offset = offset
-            if target == pos:
-                return self.POLL
+            if not self._glide:
+                if now < self.next_at:
+                    return min(self.POLL, self.next_at - now)
+                offset, wait = motion.plan_rest(self.offset, self.intensity(now), self.rng)
+                self.next_at = now + wait
+                goal = (int(round(self.anchor[0] + offset[0])), int(round(self.anchor[1] + offset[1])))
+                self.offset = offset
+                if goal == pos:
+                    return self.POLL
+                # Wishlist #36: travel the 1-3 px one pixel at a time on an
+                # eased profile instead of snapping there in one move. Each
+                # pixel is its own step, so every check above (claim, act,
+                # lock, owner input, pointer where we left it) runs again
+                # before each one.
+                self._glide = motion.plan_glide(pos, goal, self.rng)
+            gx, gy, delay = self._glide[0]
+            target = (gx, gy)
         if not _INPUT.try_acquire():
             return self.POLL  # an act is injecting; never contend with it
         try:
@@ -1832,7 +1919,12 @@ class _RestingHand:
                 return self.POLL
             if self.anchor is not None:
                 self.last_pos = landed
-                self.moves += 1
+                if self._glide:
+                    self._glide.pop(0)
+                if not self._glide:
+                    self.moves += 1  # one float step completed
+                    return self.POLL
+                return max(0.005, delay)
         return self.POLL
 
     def _move(self, target):
@@ -2161,7 +2253,7 @@ def filedrop_abort():
     if not existed:
         return jsonify({"ok": False, "error": "unknown upload_id"}), 404
     return jsonify({"ok": True})
-# ------------------------------------------------- V3-P4: chords + break
+# ------------------------------------------------- P4: chords + break
 
 @app.post("/hotkey")
 def hotkey():
@@ -2206,7 +2298,7 @@ def break_():
     return {"ok": True, "times": times}
 
 
-# ------------------------------------------------------- V3-P4: dragging
+# ------------------------------------------------------- P4: dragging
 
 @app.post("/drag")
 def drag():
@@ -2253,7 +2345,7 @@ def drag():
     return {"ok": True}
 
 
-# ------------------------------------------- V3-P4: windows + focus (#3)
+# ------------------------------------------- P4: windows + focus (#3)
 
 def _monitor_for_bounds(bounds, rects=None):
     """Index of the monitor rect containing the window's centre, else None."""
@@ -2501,7 +2593,7 @@ def focus():
     return jsonify({"ok": False, "error": f"no window matching {title!r}"}), 404
 
 
-# ---------------------------------------------- V3-P4: clipboard (#6)
+# ---------------------------------------------- P4: clipboard (#6)
 
 CF_UNICODETEXT = 13
 

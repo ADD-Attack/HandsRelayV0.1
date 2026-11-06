@@ -1,4 +1,4 @@
-"""Tests for the V3-R1 receipt-eviction fix (Grok review High #4).
+"""Tests for the R1 receipt-eviction fix (Grok review High #4).
 
 The bug: _store_receipt evicts the oldest receipt past RECEIPT_MAX and
 drops its payload — but the retry loop may already hold a reference to

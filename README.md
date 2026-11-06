@@ -209,7 +209,7 @@ carries a `"pc_state"` field with the hands' `/state` payload, fetched
 inside the same 5-second-cached reachability probe as the other info
 fields; it is `null` when the hands is unreachable or `/state` errors,
 and all existing `/v1/info` fields are unchanged.
-## Actuation (v3 P4 — wishlist #3, #4, #6, #9, #19)
+## Actuation (P4 — wishlist #3, #4, #6, #9, #19)
 
 New hands routes, all behind the same X-Secret gate as the existing
 routes (and, through the gateway, the same X-Relay-Token gate):
@@ -395,6 +395,36 @@ session secret into the gateway's `HANDS_SECRET` yourself.
   `RELAY_NTFY_TOPIC`). The standalone hands app alerts on its own lockouts.
 - Design rule inherited from v1's audit: the URL is obscurity, not a
   control — the secret and the transport are the controls.
+
+## Pause, watch state and receipts (R12 — wishlist #31–#37)
+
+The relay line is **v4** (`GET /v1/info` → `"relay_line": "v4"`; the window
+and Diagnostics show it too). The product and exe name stay "HandsRelay v2".
+
+- **Pause.** The owner's **Pause agent** button, or an agent's
+  `POST /v1/pause {"holder", "reason"}`, pauses the relay: new acts get 409
+  `"error_code": "paused"`, queued acts stay `held` until resume or their
+  deadline, the resting hand stops, and every gateway response carries
+  `X-Relay-Paused: 1`. `GET /v1/pause` reads the state. `POST /v1/resume`
+  lifts an agent pause; an owner pause can only be lifted from the window
+  (403 otherwise).
+- **Watch state.** Authenticated screen reads (`/v1/screen`,
+  `/v1/screen/hash`, `/v1/screen/wait`, `/v1/wait`) are recorded; pass
+  `?watcher=<name>` to be named. `/v1/info` reports `last_poll`
+  (`at`, `route`, `watcher`, `age_s`) and `paused`; the window's watch row
+  shows Watching / Polling / Not watching / Paused.
+- **Paste guard.** `/type` on the paste path checks for owner input, a lock
+  or a changed foreground window after setting the clipboard and before
+  Ctrl+V, and aborts with 409 `type_aborted` (`abort_reason`) if any of
+  them happened; the clipboard is restored. Every /type receipt has
+  `guarded` and `guard_scope` (`keystroke` / `pre-paste`); an unguarded
+  type adds `"warning": "UNGUARDED: ..."`.
+- **Aborted receipts.** An act the owner aborted (`type_aborted`,
+  `failsafe`) settles as `"state": "aborted"` with `"aborted_by": "owner"`,
+  not `failed`.
+- **Resting hand.** Each float step glides one pixel at a time on an eased
+  curve (0.16-0.32 s), re-checking the owner and the claim before every
+  pixel. The claim countdown in the window ticks live.
 
 ## Running the tests
 

@@ -2,9 +2,9 @@
 
 The token load-or-create shipped on the PC line 2026-10-17 (patch:
 token load-or-create at ~/.HandsRelayV0.1/gateway-token.txt) but was
-missing from the v3 tree, whose _start_all minted a fresh token per
+missing from the development tree of the time, whose _start_all minted a fresh token per
 launch — a swap would have locked the agent out until the owner
-pasted the new token from the window. V3-R3 ports the shipped
+pasted the new token from the window. R3 ports the shipped
 implementation verbatim; these checks pin the behavior:
 
   * first call creates the file and returns ("created")

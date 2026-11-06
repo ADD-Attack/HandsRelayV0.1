@@ -1,5 +1,7 @@
 # R9 wishlist sweep — per-item ledger (Opus takeover, 2026-10-20)
 
+> **Historical record (v3 line, October 2026).** Branch names, round labels and other "v3" references in this file are kept as shipped history. The relay line is **v4** from R12 on (wishlist #37).
+
 Branch `v3-r9-20261020`; base `d562912` (main `61ff473` = live R7.1 + #5). Source text: docs/WISHLIST-FULL.md.
 Status: done (this round) / already-done (landed before R9; evidence = commit + passing test file) / not-applicable / deferred / R7.2 (owned by the fix round, branch from `22a9080`).
 Test runs are per file with `../relay-wishlist/.venv/bin/python` (pytest files via `-m pytest -q`, script files run directly → "ALL PASS"). Windows-live behaviour is stub-tested only; live steps in docs/VERIFICATION.md. Nothing deployed.
@@ -51,3 +53,18 @@ Test runs are per file with `../relay-wishlist/.venv/bin/python` (pytest files v
 3. #24 budget reading: "current per-click time" = the pre-R9 human click at its fastest (path clamp + 0.05 s hover); +0.5 s is enforced on top of that, per click.
 4. UI server: the per-launch key rides the URL fragment; any local process that can read the pywebview window URL could drive the API (parity with Tk, where a local process could click the dialog). The elevation card stays the only approval path.
 5. `/click` behaviour change: human mode now uses mouseDown/hold/mouseUp instead of pyautogui.click, and drag/scroll default to human motion (flag `HANDS_HUMAN_MOTION=0` or per-act `"human": false` restores legacy). Legacy tests were pinned to `human:false` where they test legacy semantics.
+
+## R12 follow-up — #31–#37 (2026-11-06)
+
+| # | Wish | Status | Where |
+|---|------|--------|-------|
+| 31 | Pause on owner takeover | done | gateway `set_pause` / `GET`, `POST /v1/pause`, `POST /v1/resume`; act guard (409 `paused`), queued acts held (`_is_yield_conflict`), resting hand stopped (`held` false in the claim push), `X-Relay-Paused` header; app `RelayApp.set_pause` + `POST /api/pause` + **Pause agent** button |
+| 32 | Polling tracker | done | gateway `_note_poll` / `_poll_state`, `last_poll` + `paused` in `/v1/info`; app `watch_state` (paused / watching / polling / idle) + watch row in ui/ |
+| 33 | Paste path bypasses the guard | done | hands `_paste` pre-Ctrl+V check (owner / locked / foreground_changed → `_PasteAborted` → 409 `type_aborted`, clipboard restored); `_guard_fields` adds `guarded`, `guard_scope`, `warning` to every /type receipt |
+| 34 | Claim countdown static | done | app `view()` adds `server_time` + live `claim_expires_at`; ui `renderClaim` counts down from them |
+| 35 | Owner aborts read "failed" | done | gateway `OWNER_ABORT_CODES`, receipt state `aborted` + `aborted_by` / `abort_reason` (direct and pumped); ui chip "aborted — owner" |
+| 36 | Resting hand teleports | done | `motion.plan_glide` + `_RestingHand` glide queue, one pixel per move, eased; every safety check per pixel |
+| 37 | Line v3 → v4 + sweep | done (repo); PC side owed | `RELAY_LINE = "v4"` (gateway + app); 5 test files renamed `tests/test_r*_*.py`; historical marker on 5 dated docs; sweep guard test. Install folder / SMB share / shortcuts on the PC: local agent |
+
+- Tests: tests/test_wishlist_31_37.py (19); the full runner stays green (36 suites).
+- Not verified live: everything above runs stubbed off Windows; live steps in docs/VERIFICATION.md "R12 — wishlist #31–#37".

@@ -1,4 +1,4 @@
-"""HandsRelay v3 R5 tests — F10 probe-health accounting.
+"""HandsRelay R5 tests — F10 probe-health accounting.
 
 The wrapper counts consecutive FULL probe failures (locked and idle
 both None) on Windows only, flips probe_ok at 3, logs once per
@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def _load(rel):
     path = ROOT / rel
-    name = "v3r5_" + "_".join(path.with_suffix("").parts[-3:])
+    name = "r5_" + "_".join(path.with_suffix("").parts[-3:])
     spec = importlib.util.spec_from_file_location(name, path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)

@@ -333,6 +333,53 @@ def plan_rest(offset, intensity, rng):
     return (nx, ny), rng.uniform(0.25, 0.9)
 
 
+REST_GLIDE_S = (0.16, 0.32)  # one float step travels over this long (#36)
+
+
+def _smoothstep(t):
+    return t * t * (3.0 - 2.0 * t)
+
+
+def _eased_time(fraction):
+    """Normalised time at which an ease-in-out move has covered `fraction`
+    of its distance (inverse smoothstep, by bisection)."""
+    lo, hi = 0.0, 1.0
+    for _ in range(40):
+        mid = (lo + hi) / 2.0
+        if _smoothstep(mid) < fraction:
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) / 2.0
+
+
+def plan_glide(start, end, rng, duration=None):
+    """Pixel-by-pixel path for one resting-hand float step (wishlist #36).
+
+    The R11 float snapped each 1-3 px nudge in one instant move ("it's
+    teleporting a few pixels here and there"). This travels it instead:
+    one waypoint per pixel along the straight line, timed on an
+    ease-in-out profile over `duration` (drawn from REST_GLIDE_S), so the
+    pointer accelerates, drifts and settles. Returns [(x, y, delay_after)]
+    with integer pixels, each waypoint at most 1 px from the previous one
+    on each axis, the last exactly `end` with delay 0. [] when start == end.
+    """
+    x0, y0 = int(round(start[0])), int(round(start[1]))
+    x1, y1 = int(round(end[0])), int(round(end[1]))
+    n = max(abs(x1 - x0), abs(y1 - y0))
+    if n == 0:
+        return []
+    total = rng.uniform(*REST_GLIDE_S) if duration is None else max(0.0, float(duration))
+    times = [total * _eased_time(k / n) for k in range(1, n + 1)]
+    steps = []
+    for k in range(1, n + 1):
+        x = x0 + int(round((x1 - x0) * k / n))
+        y = y0 + int(round((y1 - y0) * k / n))
+        delay = times[k] - times[k - 1] if k < n else 0.0
+        steps.append((x, y, delay))
+    return steps
+
+
 # ------------------------------------------------ self-input ledger
 
 def tick_diff(a, b):
