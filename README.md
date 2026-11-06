@@ -32,16 +32,19 @@ the gateway is the only surface an agent talks to).
 
 Secrets in the packaged app:
 
-- The **gateway token** persists per machine at
-  `%USERPROFILE%\.HandsRelayV0.1\gateway-token.txt` — generated on first
-  run, reused after that (delete the file to rotate it), so an agent keeps
-  working across relaunches. The window shows it on demand (Show / Copy);
-  it is never logged.
-- The **hands secret** is owned by the app and persists per machine at
-  `%USERPROFILE%\.HandsRelayV0.1\hands-secret.txt` — generated on first run,
-  reused after that (delete the file to rotate it). The app feeds the same
-  value to the gateway and the hands, so the two can never disagree about
-  it the way the old two-app setup could.
+- The **gateway token** is fresh per launch by default and is never
+  written to disk — a relaunch mints a new one, which is also how it
+  rotates. The window shows it on demand (Show / Copy); it is never
+  logged. Set `HANDSRELAY_PERSIST_SECRETS=1` only if you explicitly
+  want it to persist per machine at
+  `%USERPROFILE%\.HandsRelayV0.1\gateway-token.txt` (delete the file to
+  rotate it). A persisted file on Windows is NOT ACL-protected.
+- The **hands secret** is owned by the app and is likewise fresh per
+  launch by default, never written to disk. With the same opt-in it
+  persists per machine at
+  `%USERPROFILE%\.HandsRelayV0.1\hands-secret.txt`. The app feeds the
+  same value to the gateway and the hands, so the two can never
+  disagree about it the way the old two-app setup could.
 
 ## Quickstart (services)
 
@@ -85,10 +88,14 @@ The parser answers /parse only once OmniParser v2 weights are in its
 models directory (`python services/parser/fetch_weights.py`, heavy deps in
 `services/parser/requirements-model.txt`). Until then it returns 501 —
 deliberately: a driver must never mistake "no model" for "empty screen".
-The parser has no auth of its own, so it listens on loopback by default —
-standalone and in the packaged app alike; the Docker deployment sets
-`PARSER_HOST=0.0.0.0` (in docker-compose.yml) for its internal network,
-where the published port is already bound to 127.0.0.1 on the host.
+The parser requires the shared `PARSER_SECRET` on /parse and /find
+(header `X-Parser-Secret`, sent by the gateway; /health stays
+unauthenticated). With no secret configured it fails closed with 503
+on those routes instead of serving unauthenticated. It listens on
+loopback by default — standalone and in the packaged app alike; the
+Docker deployment sets `PARSER_HOST=0.0.0.0` (in docker-compose.yml)
+for its internal network, where the published port is already bound
+to 127.0.0.1 on the host.
 
 ## Coordination: hands claim + queued act
 
@@ -227,7 +234,10 @@ routes (and, through the gateway, the same X-Relay-Token gate):
 **Clipboard read is sensitive.** It stays behind the same authentication
 as every other hands/gateway route, and *every read writes a line to the
 hands log queue* (`clipboard read via relay`), so the owner sees reads
-in the app window as they happen.
+in the app window as they happen. Reads also yield like acts: when the
+owner was active recently or the desktop is locked, `GET /clipboard/get`
+(and `GET /screenshot`) answer 409 instead of returning the clipboard
+or a frame.
 
 **Failsafe.** Throwing the pointer into a screen corner (pyautogui's
 FAILSAFE) aborts the act in progress; the hands answer
@@ -353,8 +363,10 @@ The hands run **inside the packaged app** (above) — same Flask routes from
 `hands/hands_relay_hands.py`, served headless on 127.0.0.1:5000 by the app
 process, with the app-owned persistent secret described above. The
 standalone hands window's Cloudflare quick tunnel is opt-in
-(`HANDS_ENABLE_TUNNEL=1`) and off by default — a public tunnel is a
-fallback, never the design.
+(`HANDS_ENABLE_TUNNEL=1` for Tailscale Serve, plus the separate
+`HANDS_ENABLE_PUBLIC_TUNNEL=1` for a public Cloudflare tunnel) and off
+by default — a public tunnel is never an automatic fallback from a
+failed Tailscale Serve.
 
 For a split deployment (services run separately, e.g. under Docker), the
 standalone hands app is still available:
@@ -375,19 +387,22 @@ session secret into the gateway's `HANDS_SECRET` yourself.
 
 ## Security model
 
-- The hands and the parser listen on loopback only. **The gateway listens
-  on all interfaces (0.0.0.0) by default** — in the packaged app and when
-  run directly — so an agent can reach it by the PC's tailnet IP; the token
-  is what protects it. Set `RELAY_GATEWAY_HOST=127.0.0.1` when the gateway
-  is only reached through Tailscale Serve or a local proxy (the app window
-  logs where the gateway listens). Docker publishes it on 127.0.0.1 only.
-  Preferred transport is Tailscale (tailnet-only); a public tunnel is a
-  fallback, never the design.
-- Two credentials are stored, both app-owned in the user's profile
-  (`%USERPROFILE%\.HandsRelayV0.1\`): the gateway token (what the agent
-  presents) and the hands secret (only ever used on the localhost
-  gateway↔hands link — it never crosses the network). Delete a file to
-  rotate it. (The standalone hands app still uses a per-session secret.)
+- The hands and the parser listen on loopback only. **The gateway also
+  listens on loopback (127.0.0.1) by default** — in the packaged app and
+  when run directly. Set `RELAY_GATEWAY_HOST=0.0.0.0` explicitly only
+  when the gateway is reached through Tailscale Serve or a TLS-terminating
+  proxy, on a network you fully trust; the app logs a loud warning when
+  it binds all interfaces. Docker publishes it on 127.0.0.1 only.
+  Preferred transport is Tailscale (tailnet-only); a public tunnel is
+  never an automatic fallback — it needs its own explicit opt-in.
+- Two credentials are minted fresh per launch by default and never
+  written to disk: the gateway token (what the agent presents) and the
+  hands secret (only ever used on the localhost gateway↔hands link —
+  it never crosses the network). With the explicit
+  `HANDSRELAY_PERSIST_SECRETS=1` opt-in they are stored, app-owned, in
+  the user's profile (`%USERPROFILE%\.HandsRelayV0.1\`); delete a file
+  to rotate one. A persisted file on Windows is NOT ACL-protected.
+  (The standalone hands app still uses a per-session secret.)
 - Failed auth attempts are logged; 10 in 10 minutes from one address
   pauses auth for that address for 5 minutes. Gateway rejections and
   lockouts appear in the packaged app's log, and a lockout pushes a phone

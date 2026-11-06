@@ -206,7 +206,9 @@ def test_parser_start_kicks_off_the_background_loader(appmod, relay, monkeypatch
 
 def test_gateway_bind_host_is_configurable(appmod, monkeypatch):
     monkeypatch.delenv("RELAY_GATEWAY_HOST", raising=False)
-    assert appmod._service_host("gateway") == "0.0.0.0"  # default unchanged
+    assert appmod._service_host("gateway") == "127.0.0.1"  # loopback by default (H1)
+    monkeypatch.setenv("RELAY_GATEWAY_HOST", "0.0.0.0")
+    assert appmod._service_host("gateway") == "0.0.0.0"  # explicit opt-in only
     monkeypatch.setenv("RELAY_GATEWAY_HOST", "127.0.0.1")
     assert appmod._service_host("gateway") == "127.0.0.1"
     assert appmod._service_host("hands") == "127.0.0.1"  # never configurable

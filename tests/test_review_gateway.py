@@ -348,3 +348,91 @@ def test_without_pillow_hash_is_501_and_screen_has_no_etag(gw, client, monkeypat
     r = client.get("/v1/screen", headers=TOKEN)
     assert r.status_code == 200 and r.data == png and "ETag" not in r.headers
     assert client.get("/v1/screen/hash", headers=TOKEN).status_code == 501
+
+
+# --------------------------------------------- H6 token strength
+
+def test_validate_gateway_token_rejects_short_and_empty(gw):
+    assert gw.validate_gateway_token("") is not None
+    assert gw.validate_gateway_token("abc") is not None
+    assert gw.validate_gateway_token("a" * 31) is not None
+
+
+def test_validate_gateway_token_rejects_denylisted_values(gw):
+    for weak in ("change-me", "password", "PASSWORD", "test-token", "secret"):
+        assert gw.validate_gateway_token(weak) is not None, weak
+
+
+def test_validate_gateway_token_accepts_32_plus(gw):
+    assert gw.validate_gateway_token("a" * 32) is None
+    assert gw.validate_gateway_token("f" * 64) is None
+    # The packaged app mints token_hex(16) (32 hex chars) at minimum;
+    # token_hex(32) (64 hex chars) is preferred for manual tokens.
+    import secrets
+
+    assert gw.validate_gateway_token(secrets.token_hex(16)) is None
+    assert gw.validate_gateway_token(secrets.token_hex(32)) is None
+
+
+# --------------------------------------------- M1 global lockout budget
+
+def test_global_lockout_trips_on_distributed_guessing(gw, client, monkeypatch):
+    clock = _Clock()
+    monkeypatch.setattr(gw, "time", clock)
+    monkeypatch.setattr(gw, "_reachability", lambda: (True, True, None))
+    # 49 bad guesses spread across peers: no single peer trips its own
+    # 10-guess budget, and nobody is locked out yet.
+    for i in range(gw.GLOBAL_FAIL_MAX - 1):
+        r = client.get(
+            "/v1/info", headers=BAD,
+            environ_base={"REMOTE_ADDR": f"10.1.0.{i % 6}"},
+        )
+        assert r.status_code == 401, i
+    # The 50th, from yet another peer, trips the global budget.
+    r = client.get(
+        "/v1/info", headers=BAD, environ_base={"REMOTE_ADDR": "10.9.9.9"}
+    )
+    assert r.status_code == 401
+    # Every peer is now locked out, including one never seen before.
+    r = client.get(
+        "/v1/info", headers=BAD, environ_base={"REMOTE_ADDR": "10.8.8.8"}
+    )
+    assert r.status_code == 429
+    # A valid token is never locked out.
+    assert client.get("/v1/info", headers=TOKEN).status_code == 200
+    lines = _drain(gw.log_queue)
+    assert any("across peers" in line for line in lines)
+    clock.t += gw.LOCKOUT_SECONDS + 1
+    r = client.get(
+        "/v1/info", headers=BAD, environ_base={"REMOTE_ADDR": "10.8.8.8"}
+    )
+    assert r.status_code == 401
+
+
+# --------------------------------------------- M2 audit logging
+
+def test_successful_act_is_audit_logged_without_payload_values(gw, client, monkeypatch):
+    monkeypatch.setattr(gw, "_forward_act", lambda op, payload: (200, {"ok": True}))
+    monkeypatch.setattr(gw, "_reachability", lambda: (True, True, None))
+    _drain(gw.log_queue)
+    r = client.post(
+        "/v1/act", json={"op": "type", "text": "do-not-log-this-text"}, headers=TOKEN
+    )
+    assert r.status_code == 200
+    lines = _drain(gw.log_queue)
+    assert any(line.startswith("AUDIT: act op=type") for line in lines)
+    assert not any("do-not-log-this-text" in line for line in lines)
+
+
+def test_successful_clipboard_read_is_audit_logged_without_contents(gw, client, monkeypatch):
+    monkeypatch.setattr(
+        gw, "_proxy_hands_get",
+        lambda path: ({"ok": True, "text": "do-not-log-this-text"}, 200),
+    )
+    monkeypatch.setattr(gw, "_reachability", lambda: (True, True, None))
+    _drain(gw.log_queue)
+    r = client.get("/v1/clipboard", headers=TOKEN)
+    assert r.status_code == 200
+    lines = _drain(gw.log_queue)
+    assert any(line.startswith("AUDIT: clipboard read") for line in lines)
+    assert not any("do-not-log-this-text" in line for line in lines)

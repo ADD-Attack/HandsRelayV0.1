@@ -11,6 +11,7 @@ services:
       - HANDS_URL=${HANDS_URL:-http://host.docker.internal:5000}
       - HANDS_SECRET=<redacted>}
       - PARSER_URL=http://parser:5011
+      - PARSER_SECRET=${PARSER_SECRET:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"   # reach the Windows hands on the host
     depends_on:
@@ -23,9 +24,13 @@ services:
     restart: unless-stopped
     environment:
       # Inside the compose network the gateway container reaches the
-      # parser over the container interface; outside Docker the parser
-      # defaults to loopback-only (it has no auth of its own).
+      # parser via the parser container's IP, not its loopback — so the
+      # parser must listen on 0.0.0.0 here (127.0.0.1 inside the
+      # container would be unreachable from the gateway). That is safe
+      # now that /parse and /find require the shared PARSER_SECRET (H2),
+      # and the published port stays 127.0.0.1 on the host.
       - PARSER_HOST=0.0.0.0
+      - PARSER_SECRET=${PARSER_SECRET:-}
     ports:
       - "127.0.0.1:5011:5011"
     volumes:

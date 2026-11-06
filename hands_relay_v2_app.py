@@ -10,22 +10,19 @@ up all three relay services in this one process —
 
 The status lines show each service; the log shows what happened.
 
-Secrets:
-  * The gateway token persists per machine at
-    %USERPROFILE%\\.HandsRelayV0.1\\gateway-token.txt — generated on first
-    run, reused after that (delete the file to rotate). It is shown in
-    the window with a Copy button so the operator can hand it to the
-    agent once; after that, the same token keeps working across
-    relaunches, which is what lets the agent keep hands while the
-    owner is away from the PC.
-  * The hands secret is owned by this app and persists per machine at
-    %USERPROFILE%\\.HandsRelayV0.1\\hands-secret.txt — generated on first
-    run, reused after that (delete the file to rotate). It is never
-    logged or displayed. The app hands the same value to the gateway
-    and to the in-process hands, which is the whole point of bundling
-    them: gateway and hands can no longer disagree about the secret,
-    and the old v1 relay app (with its per-launch secret buried in
-    Downloads\\cursor_relay.py) is not needed at all.
+Secrets (H3): by default BOTH secrets are fresh per launch and are
+never written to disk — the gateway token is shown in the window with
+a Copy button so the operator can hand it to the agent for that
+launch, and a relaunch mints new secrets. Persistence is only behind
+the explicit opt-in HANDSRELAY_PERSIST_SECRETS=1, in which case the
+gateway token lives at %USERPROFILE%\\.HandsRelayV0.1\\gateway-token.txt
+and the hands secret at
+%USERPROFILE%\\.HandsRelayV0.1\\hands-secret.txt (delete a file to
+rotate it). A persisted file on Windows is NOT ACL-protected — the
+operator is warned in the log when persistence is used there. The
+hands secret is never logged or displayed. The app feeds the same
+value to the gateway and the hands, so the two can never disagree
+about it the way the old two-app setup could.
 
 Stop (or closing the window) stops all three services.
 
@@ -50,6 +47,7 @@ import queue
 import secrets
 import socket
 import sys
+import tempfile
 import threading
 import time
 
@@ -80,15 +78,15 @@ SERVICE_FILES = {
     "gateway": "services/gateway/app.py",
 }
 SERVICE_PORTS = {"hands": HANDS_PORT, "parser": PARSER_PORT, "gateway": GATEWAY_PORT}
-SERVICE_HOSTS = {"hands": "127.0.0.1", "parser": "127.0.0.1", "gateway": "0.0.0.0"}
+SERVICE_HOSTS = {"hands": "127.0.0.1", "parser": "127.0.0.1", "gateway": "127.0.0.1"}
 SERVICE_LABELS = {"hands": "Hands", "parser": "Parser", "gateway": "Gateway"}
 
 
 def _service_host(name):
     """Bind address for a service. Review I1: the gateway's is configurable
-    via RELAY_GATEWAY_HOST (e.g. 127.0.0.1 behind Tailscale Serve). The
-    default stays 0.0.0.0 so an agent reaching the PC by its tailnet IP
-    keeps working; hands and parser are always loopback-only."""
+    via RELAY_GATEWAY_HOST (e.g. 0.0.0.0 only behind Tailscale Serve or a
+    TLS proxy, on a network you fully trust). The default is 127.0.0.1;
+    hands and parser are always loopback-only."""
     if name == "gateway":
         return os.environ.get("RELAY_GATEWAY_HOST", "").strip() or SERVICE_HOSTS[name]
     return SERVICE_HOSTS[name]
@@ -538,14 +536,60 @@ def _hands_secret_path():
     return os.path.join(os.path.expanduser("~"), ".HandsRelayV0.1", "hands-secret.txt")
 
 
-def _load_or_create_hands_secret():
+def _persist_secrets_opted_in():
+    """True only when the operator explicitly opts into persistence."""
+    return (os.environ.get("HANDSRELAY_PERSIST_SECRETS") or "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+
+
+def _save_secret_file(path, value):
+    """Atomically write a secret file. Returns True on success.
+
+    Writes to a temp file in the same directory and os.replace()s it
+    into place, so a crash cannot leave a half-written secret. On
+    POSIX the temp file is created with mode 0o600 before writing;
+    on Windows the file is NOT ACL-protected (chmod is a no-op there),
+    so callers must warn the operator when persistence is used.
+    """
+    directory = os.path.dirname(path)
+    try:
+        os.makedirs(directory, exist_ok=True)
+        fd, tmp_path = tempfile.mkstemp(dir=directory, prefix=".secret-", suffix=".tmp")
+        try:
+            if os.name != "nt":
+                os.fchmod(fd, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(value + "\n")
+        except Exception:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
+        os.replace(tmp_path, path)
+        return True
+    except OSError:
+        return False
+
+
+def _load_or_create_hands_secret(persist=None):
     """Return (secret, origin) for the app-owned hands secret.
 
-    origin is "saved" (read back from disk), "created" (first run — a
-    new secret was generated and saved), or "ephemeral" (the save failed,
-    so this launch uses an unsaved secret). The value itself is never
-    logged or displayed; it only goes to the gateway and the hands.
+    origin is "saved" (read back from disk), "created" (first run with
+    persistence opted in — a new secret was generated and saved), or
+    "ephemeral" (a fresh per-launch secret, never written to disk).
+    The default is ephemeral: persistence happens only when
+    HANDSRELAY_PERSIST_SECRETS=1 is set (or persist=True is passed).
+    The value itself is never logged or displayed; it only goes to the
+    gateway and the hands.
     """
+    if persist is None:
+        persist = _persist_secrets_opted_in()
+    if not persist:
+        return secrets.token_urlsafe(32), "ephemeral"
     path = _hands_secret_path()
     try:
         with open(path, "r", encoding="utf-8") as fh:
@@ -555,52 +599,43 @@ def _load_or_create_hands_secret():
     except OSError:
         pass
     value = secrets.token_urlsafe(32)
-    try:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w", encoding="utf-8") as fh:
-            fh.write(value + "\n")
-        try:
-            os.chmod(path, 0o600)
-        except OSError:
-            pass  # best effort (on Windows this only toggles read-only)
+    if _save_secret_file(path, value):
         return value, "created"
-    except OSError:
-        return value, "ephemeral"
+    return value, "ephemeral"
 
 
 def _gateway_token_path():
     return os.path.join(os.path.expanduser("~"), ".HandsRelayV0.1", "gateway-token.txt")
 
 
-def _load_or_create_gateway_token():
-    """Return (token, origin) for the per-machine gateway token.
+def _load_or_create_gateway_token(persist=None):
+    """Return (token, origin) for the gateway token.
 
-    Same load-or-create pattern as the hands secret: origin is "saved"
-    (read back from disk), "created" (first run — a new token was
-    generated and saved), or "ephemeral" (the save failed, so this
-    launch falls back to an unsaved token). The value is shown in the
+    Same pattern as the hands secret: the default is a fresh per-launch
+    token (origin "ephemeral"), 64 hex chars (secrets.token_hex(32));
+    persistence is only behind the HANDSRELAY_PERSIST_SECRETS=1 opt-in,
+    in which case a saved token is reused ("saved") or a new one is
+    created and saved atomically ("created"). The value is shown in the
     window (the operator copies it to the agent) but never logged.
     """
+    if persist is None:
+        persist = _persist_secrets_opted_in()
+    if not persist:
+        return secrets.token_hex(32), "ephemeral"
     path = _gateway_token_path()
     try:
         with open(path, "r", encoding="utf-8") as fh:
             saved = fh.read().strip()
-        if len(saved) >= 16:
+        # H6: a persisted token shorter than 32 chars is not a token;
+        # it is replaced with a fresh 64-char one below.
+        if len(saved) >= 32:
             return saved, "saved"
     except OSError:
         pass
-    value = secrets.token_hex(16)
-    try:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w", encoding="utf-8") as fh:
-            fh.write(value + "\n")
-        try:
-            os.chmod(path, 0o600)
-        except OSError:
-            pass  # best effort (on Windows this only toggles read-only)
+    value = secrets.token_hex(32)
+    if _save_secret_file(path, value):
         return value, "created"
-    except OSError:
-        return value, "ephemeral"
+    return value, "ephemeral"
 
 
 def _service_path(rel_path):
@@ -697,6 +732,7 @@ class RelayApp:
         self.root = root if root is not None else _Scheduler()
         self.token = None
         self._hands_secret = None
+        self._parser_secret = None
         self._hands_module = None
         self._gateway_module = None
         self._parser_module = None
@@ -959,10 +995,21 @@ class RelayApp:
             self.log_line(
                 f"First run: created the hands secret at {secret_path} (value not shown)."
             )
-        else:
+        elif _persist_secrets_opted_in():
             self.log_line(
                 f"WARNING: could not save the hands secret to {secret_path}; "
                 "using a one-launch secret instead."
+            )
+        else:
+            self.log_line(
+                "Hands secret is one-launch only (not saved to disk; set "
+                "HANDSRELAY_PERSIST_SECRETS=1 to persist it)."
+            )
+        if origin in ("saved", "created") and os.name == "nt":
+            self.log_line(
+                "WARNING: the persisted hands secret file is NOT "
+                "ACL-protected on Windows — any process running as this "
+                "user can read it."
             )
 
         gateway_token, token_origin = _load_or_create_gateway_token()
@@ -973,20 +1020,41 @@ class RelayApp:
             self.log_line(
                 f"First run: created the gateway token at {token_path} (value not shown)."
             )
-        else:
+        elif _persist_secrets_opted_in():
             self.log_line(
                 f"WARNING: could not save the gateway token to {token_path}; "
                 "using a one-launch token instead."
             )
+        else:
+            self.log_line(
+                "Gateway token is one-launch only (not saved to disk; set "
+                "HANDSRELAY_PERSIST_SECRETS=1 to persist it)."
+            )
+        if token_origin in ("saved", "created") and os.name == "nt":
+            self.log_line(
+                "WARNING: the persisted gateway token file is NOT "
+                "ACL-protected on Windows — any process running as this "
+                "user can read it."
+            )
 
         self.token = gateway_token
         self._hands_secret = hands_secret
+        # H2: the parser secret is minted fresh for this launch only —
+        # never written to disk — and handed to the gateway and parser
+        # below, so /parse and /find are authenticated end to end.
+        parser_secret = secrets.token_hex(32)
+        self._parser_secret = parser_secret
+        self.log_line(
+            "Parser secret generated for this launch (value not shown; "
+            "not saved to disk)."
+        )
         # The services read their config from the environment at import
         # time, so set it BEFORE importing them.
         os.environ["RELAY_GATEWAY_TOKEN"] = self.token
         os.environ["HANDS_URL"] = HANDS_URL
         os.environ["HANDS_SECRET"] = hands_secret
         os.environ["PARSER_URL"] = f"http://127.0.0.1:{PARSER_PORT}"
+        os.environ["PARSER_SECRET"] = parser_secret
 
         self._health = {name: ServiceHealth() for name in SERVICE_FILES}
         self._start_one("hands")
@@ -1070,10 +1138,12 @@ class RelayApp:
             module.HANDS_URL = HANDS_URL
             module.HANDS_SECRET = self._hands_secret
             module.PARSER_URL = f"http://127.0.0.1:{PARSER_PORT}"
+            module.PARSER_SECRET = self._parser_secret
             # Review E4: gateway lockouts alert through the hands' ntfy topic.
             module.ALERT_HOOK = self._alert_via_hands
             self._gateway_module = module
         if name == "parser":
+            module.PARSER_SECRET = self._parser_secret
             self._parser_module = module
         try:
             # R4 (F9): match the gateway module's 32 — long-poll
@@ -1096,7 +1166,9 @@ class RelayApp:
         self.log_line(f"{label} service started on port {port}.")
         if name == "gateway":
             where = (
-                "all network interfaces - set RELAY_GATEWAY_HOST=127.0.0.1 to restrict"
+                "WARNING: all network interfaces, no TLS — the token "
+                "travels in plain HTTP; unset RELAY_GATEWAY_HOST to bind "
+                "127.0.0.1"
                 if host == "0.0.0.0"
                 else "this address only"
             )

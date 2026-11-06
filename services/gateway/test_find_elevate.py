@@ -89,6 +89,23 @@ def run():
         check("/v1/find forwards case_sensitive=True",
               stub.calls[-1][1]["json"]["case_sensitive"] is True)
 
+        # H2: with a parser secret configured, the gateway presents it.
+        saved_parser_secret = gateway.PARSER_SECRET
+        gateway.PARSER_SECRET = "parser-secret-xyz"
+        try:
+            gateway.requests.post = stub
+            r = client.post(
+                "/v1/find",
+                json={"image_b64": "AAAA", "text": "Save"},
+                headers=TOKEN,
+            )
+            check("/v1/find sends the parser secret header",
+                  stub.calls[-1][1].get("headers") == {
+                      "X-Parser-Secret": "parser-secret-xyz"
+                  })
+        finally:
+            gateway.PARSER_SECRET = saved_parser_secret
+
         # Parser status passthrough (e.g. its 501 honesty response).
         gateway.requests.post = Stub(
             FakeResp(501, {"ok": False, "error": "parser model not loaded"})
