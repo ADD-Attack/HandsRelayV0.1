@@ -25,6 +25,8 @@ screen.
 
 import base64
 import binascii
+import hashlib
+import hmac
 import io
 import os
 import threading
@@ -34,6 +36,32 @@ from flask import Flask, jsonify, request
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 16_000_000
+
+# H2: the parser is an internal service, but it used to have no auth of
+# its own — anyone who could reach it could run inference on arbitrary
+# screenshots. It now requires a shared secret (PARSER_SECRET) on
+# /parse and /find, sent by the gateway. /health stays unauthenticated
+# (liveness only). If no secret is configured, /parse and /find fail
+# closed with 503 instead of serving unauthenticated.
+PARSER_SECRET = os.environ.get("PARSER_SECRET", "").strip()
+
+
+def _parser_auth():
+    """(error_response, status) or (None, None) when authorised."""
+    if not PARSER_SECRET:
+        return (
+            jsonify(
+                {
+                    "ok": False,
+                    "error": "parser secret not configured — refusing to serve unauthenticated",
+                }
+            ),
+            503,
+        )
+    provided = request.headers.get("X-Parser-Secret") or ""
+    if not hmac.compare_digest(provided, PARSER_SECRET):
+        return jsonify({"ok": False, "error": "bad parser secret"}), 401
+    return None, None
 
 CONF = float(os.environ.get("PARSER_CONF", "0.25"))
 
@@ -45,6 +73,24 @@ def _default_models_dir():
 
 
 MODELS_DIR = os.environ.get("PARSER_MODELS_DIR", _default_models_dir())
+
+# M4: expected SHA-256 of icon_detect/model.pt at the pinned revision
+# in fetch_weights.py. A .pt file is a pickle payload, so the parser
+# refuses to load a detector whose hash does not match — a planted
+# model.pt must not become code execution. Other candidate weights
+# files (best.pt, a root model.pt) are not hash-checked; they are an
+# explicit operator choice, not the fetch path.
+EXPECTED_DETECTOR_SHA256 = (
+    "dab3d4351ad00b035db829909a4db98354d5a90f6990e4ac00222a9a95d4bf57"
+)
+
+
+def _sha256_file(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 _state_lock = threading.Lock()
 _infer_lock = threading.RLock()
@@ -94,6 +140,18 @@ def _get_detector():
         if not weights:
             _detector_state = "weights_missing"
             return None
+        # M4: refuse a tampered detector on the standard fetch path.
+        if weights.endswith(os.path.join("icon_detect", "model.pt")):
+            try:
+                if _sha256_file(weights) != EXPECTED_DETECTOR_SHA256:
+                    _detector_state = (
+                        "load_error: icon_detect/model.pt SHA-256 mismatch "
+                        "(refusing to load a possibly planted weights file)"
+                    )
+                    return None
+            except OSError as exc:
+                _detector_state = f"load_error: cannot read weights: {exc}"
+                return None
         try:
             from ultralytics import YOLO
         except ImportError:
@@ -305,6 +363,9 @@ def _decode_image_b64(body):
 
 @app.post("/parse")
 def parse():
+    err, status = _parser_auth()
+    if err is not None:
+        return err, status
     body = request.get_json(force=True, silent=True) or {}
     raw, err = _decode_image_b64(body)
     if err is not None:
@@ -322,6 +383,9 @@ def parse():
 
 @app.post("/find")
 def find():
+    err, status = _parser_auth()
+    if err is not None:
+        return err, status
     body = request.get_json(force=True, silent=True) or {}
     text = body.get("text") or ""
     if not text:
@@ -346,8 +410,11 @@ def find():
 if __name__ == "__main__":
     from waitress import serve
 
-    # Loopback by default: the parser has no auth of its own and is an
-    # internal service. Docker deployments set PARSER_HOST=0.0.0.0
-    # (docker-compose.yml) so the gateway container can reach it.
+    # Loopback by default: the parser is an internal service, and
+    # /parse and /find now require the shared PARSER_SECRET (H2) — a
+    # run with no secret configured fails closed with 503 on those
+    # routes instead of serving unauthenticated. Docker sets
+    # PARSER_HOST=127.0.0.1 (docker-compose.yml) so the gateway
+    # container can reach it on the compose network.
     start_background_loader()  # review E8: model_loaded without waiting for a /parse
     serve(app, host=os.environ.get("PARSER_HOST", "127.0.0.1"), port=5011, threads=4)

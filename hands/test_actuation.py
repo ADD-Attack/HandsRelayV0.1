@@ -413,6 +413,26 @@ def run():
     check("clipboard set unavailable -> 501", r.status_code == 501)
     hands._clipboard_backend = orig_backend
 
+    # ------------------------------------------------ H4: reads yield too
+    # Clipboard reads and screenshots yield when the owner is active or
+    # the desktop is locked, like any act. Stub the lock probe (off
+    # Windows it returns (None, None), i.e. never yields).
+    orig_probe = hands._probe_lock_state
+    try:
+        hands._probe_lock_state = lambda: (True, None)
+        r = client.get("/clipboard/get", headers=AUTH)
+        check("clipboard get yields (409) when the desktop is locked",
+              r.status_code == 409 and r.get_json()["error_code"] == "locked")
+        r = client.get("/screenshot", headers=AUTH)
+        check("screenshot yields (409) when the desktop is locked",
+              r.status_code == 409 and r.get_json()["error_code"] == "locked")
+        hands._probe_lock_state = lambda: (False, 0.0)
+        r = client.get("/clipboard/get", headers=AUTH)
+        check("clipboard get yields (409) when the owner was just active",
+              r.status_code == 409 and r.get_json()["error_code"] == "yield")
+    finally:
+        hands._probe_lock_state = orig_probe
+
     # --------------------------------- windows clipboard backend (R7.2)
     # _WindowsClipboardBackend never runs off Windows, which is how
     # the data.size AttributeError shipped (#26). Fake the _setup dll

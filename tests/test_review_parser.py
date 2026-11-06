@@ -25,6 +25,11 @@ def parser(tmp_path):
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     mod.MODELS_DIR = str(tmp_path)
+    # M4: the fake weights file below is b"weights"; the load-time hash
+    # check must expect that hash, or _get_detector() refuses to load it.
+    import hashlib
+
+    mod.EXPECTED_DETECTOR_SHA256 = hashlib.sha256(b"weights").hexdigest()
     yield mod
     mod.stop_background()
 

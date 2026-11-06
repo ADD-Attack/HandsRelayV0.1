@@ -41,9 +41,54 @@ from flask import Flask, Response, jsonify, request
 # Stripped (review E9): cmd's `set NAME=value && ...` keeps the trailing
 # space, which made the token and secret silently never match.
 TOKEN = os.environ.get("RELAY_GATEWAY_TOKEN", "").strip()
+
+# H6: a short or guessable token is brute-forceable despite the lockout,
+# so the gateway refuses to start with one. Checked at startup only,
+# not at import time: tests assign mod.TOKEN directly after import, and
+# the packaged app assigns module.TOKEN after loading.
+TOKEN_MIN_LENGTH = 32
+TOKEN_DENYLIST = {
+    "change-me",
+    "changeme",
+    "password",
+    "password123",
+    "secret",
+    "test-token",
+    "letmein",
+    "admin",
+    "handsrelay",
+    "relay",
+}
+
+
+def validate_gateway_token(token):
+    """Return an error string, or None when the token is acceptable.
+
+    A token must be at least 32 characters and not a known weak value.
+    Generate one with e.g. secrets.token_hex(32) (64 hex chars).
+    """
+    if not token or len(token) < TOKEN_MIN_LENGTH:
+        return (
+            f"RELAY_GATEWAY_TOKEN must be at least {TOKEN_MIN_LENGTH} "
+            f"characters (got {len(token or '')})"
+        )
+    if token.strip().lower() in TOKEN_DENYLIST:
+        return (
+            "RELAY_GATEWAY_TOKEN is a known weak value; generate a random "
+            "one with e.g. secrets.token_hex(32)"
+        )
+    return None
 HANDS_URL = os.environ.get("HANDS_URL", "http://host.docker.internal:5000").strip().rstrip("/")
 HANDS_SECRET = os.environ.get("HANDS_SECRET", "").strip()
 PARSER_URL = os.environ.get("PARSER_URL", "http://parser:5011").strip().rstrip("/")
+# H2: shared secret the gateway presents to the parser on /parse and
+# /find (header X-Parser-Secret). The packaged app mints one per launch;
+# docker-compose wires the same value to both services.
+PARSER_SECRET = os.environ.get("PARSER_SECRET", "").strip()
+
+
+def _parser_headers():
+    return {"X-Parser-Secret": PARSER_SECRET} if PARSER_SECRET else {}
 
 HANDS_OPS = {
     "move", "click", "type", "key", "scroll",
@@ -406,6 +451,16 @@ _fail_by_peer = {}
 _lockout_by_peer = {}
 PEER_SWEEP_AT = 256  # review L6: sweep stale per-peer entries past this many peers
 
+# M1: a per-IP budget alone multiplies with many source IPs (IPv6, VPNs,
+# cloud hosts). A small global budget caps distributed guessing too:
+# GLOBAL_FAIL_MAX bad tokens from any peers inside FAIL_WINDOW locks out
+# every peer for LOCKOUT_SECONDS. A valid token is never locked out.
+# This is in-memory only — a restart still clears it (persistence is a
+# follow-up; the per-launch gateway is the common case).
+GLOBAL_FAIL_MAX = 50
+_fail_global = []
+_lockout_global_until = 0.0
+
 
 def _peer_key():
     try:
@@ -429,11 +484,14 @@ def _gate_decision(provided):
     even when this peer is over the failure budget. Empty TOKEN fails closed.
     tripped is True for the one failure that starts a lockout.
     """
+    global _lockout_global_until
     now = time.monotonic()
     peer = _peer_key()
     with _fail_lock:
         if TOKEN and hmac.compare_digest(provided, TOKEN):
             return "ok", False
+        if now < _lockout_global_until:
+            return "locked", False
         until = _lockout_by_peer.get(peer)
         if until is not None:
             if now < until:
@@ -447,6 +505,29 @@ def _gate_decision(provided):
             _fail_by_peer.pop(peer, None)
         else:
             _fail_by_peer[peer] = times
+        # M1 global budget: count this failure across all peers, and
+        # lock out everyone when distributed guessing trips it. The
+        # log/alert here (not via tripped) keeps the message honest
+        # about the cause — gate() would otherwise report it as a
+        # per-peer lockout of MAX_FAILS guesses from this peer.
+        _fail_global[:] = [t for t in _fail_global if now - t < FAIL_WINDOW]
+        _fail_global.append(now)
+        if len(_fail_global) >= GLOBAL_FAIL_MAX:
+            _lockout_global_until = now + LOCKOUT_SECONDS
+            _fail_global.clear()
+            log_event(
+                f"LOCKOUT: {GLOBAL_FAIL_MAX} bad gateway tokens across "
+                f"peers inside {FAIL_WINDOW // 60} minutes - authentication "
+                f"paused for {LOCKOUT_SECONDS // 60} minutes"
+            )
+            _alert(
+                "HandsRelay gateway LOCKOUT",
+                f"{GLOBAL_FAIL_MAX} bad gateway-token guesses across peers. "
+                f"Authentication is paused for {LOCKOUT_SECONDS // 60} minutes.",
+            )
+            # Already logged/alerted as a global lockout: do not also
+            # report this same failure as a per-peer trip in gate().
+            tripped = False
         if len(_fail_by_peer) + len(_lockout_by_peer) > PEER_SWEEP_AT:
             _sweep_peers_locked(now)
         return "bad", tripped
@@ -791,7 +872,9 @@ def hands_release():
 def parse():
     """Forward a screenshot (JSON {"image_b64": ...}) to the parser service."""
     try:
-        r = requests.post(f"{PARSER_URL}/parse", json=_json_body(), timeout=120)
+        r = requests.post(
+            f"{PARSER_URL}/parse", json=_json_body(), headers=_parser_headers(), timeout=120
+        )
     except requests.RequestException as exc:
         return jsonify({"ok": False, "error": f"parser unreachable: {exc}"}), 502
     try:
@@ -853,7 +936,9 @@ def find():
         "case_sensitive": bool(body.get("case_sensitive")),
     }
     try:
-        r = requests.post(f"{PARSER_URL}/find", json=payload, timeout=120)
+        r = requests.post(
+            f"{PARSER_URL}/find", json=payload, headers=_parser_headers(), timeout=120
+        )
     except requests.RequestException as exc:
         return jsonify({"ok": False, "error": f"parser unreachable: {exc}"}), 502
     try:
@@ -910,7 +995,13 @@ def elevate():
     launch happens only if the person at the PC approves it there.
     """
     body = _json_body()
-    return _hands_forward("POST", "/elevate", {"name": body.get("name") or ""})
+    name = body.get("name") or ""
+    resp, status = _hands_forward("POST", "/elevate", {"name": name})
+    # M2: audit-log successful sensitive actions (name only — the name
+    # is an operator-configured allowlist label, never command text).
+    if status < 400:
+        log_event(f"AUDIT: elevate name={_short(name)} status={status}")
+    return resp, status
 
 
 @app.get("/v1/elevate/<eid>")
@@ -1539,7 +1630,11 @@ def clipboard():
     Clipboard reads are sensitive: this route sits behind the gateway
     token like every /v1 route, and the hands logs every read.
     """
-    return _proxy_hands_get("/clipboard/get")
+    resp, status = _proxy_hands_get("/clipboard/get")
+    # M2: audit-log the read (status only — never the clipboard text).
+    if status == 200:
+        log_event("AUDIT: clipboard read status=200")
+    return resp, status
 
 
 @app.post("/v1/act")
@@ -1557,6 +1652,9 @@ def act():
     op = body.get("op") or ""
     payload = {k: v for k, v in body.items() if k != "op"}
     status, result = _forward_act(op, payload)
+    # M2: audit-log the act (op name only — never payload values).
+    if status < 400:
+        log_event(f"AUDIT: act op={_short(op)} status={status}")
     return jsonify(result), status
 
 
@@ -1592,6 +1690,9 @@ def act_queued():
         # the response body so the caller can reconcile later.
         now = time.time()
         applied = isinstance(status, int) and 200 <= status < 300
+        # M2: audit-log the act (op name only — never payload values).
+        if applied:
+            log_event(f"AUDIT: act/queued op={_short(op)} status={status}")
         receipt = {
             "id": uuid.uuid4().hex,
             "op": _short(op),
@@ -1789,6 +1890,24 @@ def filedrop():
         return jsonify({"ok": False, "error": "folder required"}), 400
     if not isinstance(filename, str) or not filename:
         return jsonify({"ok": False, "error": "filename required"}), 400
+    # M3: gateway-side defence in depth for filedrop. The hands still
+    # enforces its own allowlist and bare-filename rule, but the
+    # gateway no longer forwards a traversal or a non-absolute folder
+    # at all. (Windows drive/UNC paths count as absolute even when
+    # this gateway runs on Linux.)
+    if "/" in filename or "\\" in filename or ".." in filename:
+        return jsonify({"ok": False, "error": "filename must be a bare name"}), 400
+    parts = [p for p in folder.replace("\\", "/").split("/") if p]
+    if (
+        not folder
+        or ".." in parts
+        or not (
+            os.path.isabs(folder)
+            or (len(folder) >= 3 and folder[1] == ":" and folder[2] in "/\\")
+            or folder.startswith("\\\\")
+        )
+    ):
+        return jsonify({"ok": False, "error": "folder must be an absolute path"}), 400
     if not isinstance(data_b64, str) or not data_b64:
         return jsonify({"ok": False, "error": "data_b64 required"}), 400
     try:
@@ -1805,6 +1924,13 @@ def filedrop():
     if len(data) > 16 * 1024 * 1024:
         return jsonify({"ok": False, "error": "file exceeds 16MB"}), 400
     result, status = _filedrop_via_hands(folder, filename, data, digest)
+    # M2: audit-log the drop (filename, size and SHA-256 only — never
+    # the file contents).
+    if status < 400:
+        log_event(
+            f"AUDIT: filedrop folder={_short(folder)} filename={_short(filename)} "
+            f"size={len(data)} sha256={digest} status={status}"
+        )
     return jsonify(result), status
 
 
@@ -2093,10 +2219,21 @@ if __name__ == "__main__":
     # endpoints (wait_for up to 300 s, screen/wait 25 s, a long type
     # forward up to 600 s) overlapped — every route, /v1/info
     # included, queued behind them. 32 costs nothing at this scale.
-    # Review I1: the bind address is configurable. The default stays
-    # 0.0.0.0 (all interfaces) so an agent that reaches the gateway by the
-    # PC's tailnet IP keeps working; set RELAY_GATEWAY_HOST=127.0.0.1 when
-    # the gateway is only reached through Tailscale Serve or a local proxy.
-    host = os.environ.get("RELAY_GATEWAY_HOST", "0.0.0.0").strip() or "0.0.0.0"
+    # Review I1: the bind address is configurable. The default is
+    # 127.0.0.1 (loopback only) so the token never travels on the LAN
+    # in plain HTTP; set RELAY_GATEWAY_HOST=0.0.0.0 explicitly only
+    # when the gateway is reached through Tailscale Serve or a local
+    # proxy, and only on a network you fully trust.
+    host = os.environ.get("RELAY_GATEWAY_HOST", "127.0.0.1").strip() or "127.0.0.1"
+    if host == "0.0.0.0":
+        print(
+            "WARNING: HandsRelay gateway listening on 0.0.0.0 (all "
+            "interfaces) with no TLS — the token travels in plain HTTP. "
+            "Use 127.0.0.1 behind Tailscale Serve or a TLS proxy instead."
+        )
+    # H6: fail fast on a weak token instead of serving with one.
+    token_error = validate_gateway_token(TOKEN)
+    if token_error is not None:
+        raise SystemExit(f"ERROR: {token_error}")
     print(f"HandsRelay gateway listening on {host}:5010")
     serve(app, host=host, port=5010, threads=32)

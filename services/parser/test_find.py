@@ -12,8 +12,12 @@ import io
 import os
 import sys
 
+os.environ.setdefault("PARSER_SECRET", "test-parser-secret-0123456789abcdef")
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import app as parser  # noqa: E402
+
+AUTH = {"X-Parser-Secret": parser.PARSER_SECRET}
 from PIL import Image  # noqa: E402
 
 
@@ -58,28 +62,48 @@ def run():
 
     img_b64 = tiny_png_b64()
 
+    # H2: /parse and /find require the shared parser secret.
+    r = client.post("/parse", json={"image_b64": img_b64})
+    check("no parser secret: /parse returns 401", r.status_code == 401)
+    r = client.post(
+        "/parse", json={"image_b64": img_b64},
+        headers={"X-Parser-Secret": "wrong-secret"},
+    )
+    check("wrong parser secret: /parse returns 401", r.status_code == 401)
+    r = client.get("/health")
+    check("GET /health stays unauthenticated",
+          r.status_code == 200 and r.get_json()["ok"] is True)
+    saved_secret = parser.PARSER_SECRET
+    parser.PARSER_SECRET = ""
+    try:
+        r = client.post("/parse", json={"image_b64": img_b64}, headers=AUTH)
+        check("no secret configured: /parse fails closed with 503",
+              r.status_code == 503)
+    finally:
+        parser.PARSER_SECRET = saved_secret
+
     # No model loaded: honesty rule — /find 501 and /parse still 501,
     # in the same body style.
-    r = client.post("/find", json={"image_b64": img_b64, "text": "icon"})
+    r = client.post("/find", json={"image_b64": img_b64, "text": "icon"}, headers=AUTH)
     check("no model: /find returns 501", r.status_code == 501)
     check(
         "no model: /find 501 body matches /parse style",
         r.get_json()["ok"] is False and "model" in r.get_json(),
     )
-    r = client.post("/parse", json={"image_b64": img_b64})
+    r = client.post("/parse", json={"image_b64": img_b64}, headers=AUTH)
     check("no model: /parse still returns 501", r.status_code == 501)
 
     # Empty text -> 400 (checked before the model).
-    r = client.post("/find", json={"image_b64": img_b64, "text": ""})
+    r = client.post("/find", json={"image_b64": img_b64, "text": ""}, headers=AUTH)
     check("empty text returns 400", r.status_code == 400)
-    r = client.post("/find", json={"image_b64": img_b64})
+    r = client.post("/find", json={"image_b64": img_b64}, headers=AUTH)
     check("missing text returns 400", r.status_code == 400)
 
     # Stub the detector; no captioner -> labels fall back to "icon".
     parser._get_detector = lambda: _Detector()
     parser._get_captioner = lambda: None
 
-    r = client.post("/parse", json={"image_b64": img_b64})
+    r = client.post("/parse", json={"image_b64": img_b64}, headers=AUTH)
     body = r.get_json()
     check(
         "/parse via _run_parse returns 2 elements",
@@ -90,7 +114,7 @@ def run():
         body["width"] == 50 and body["height"] == 40,
     )
 
-    r = client.post("/find", json={"image_b64": img_b64, "text": "icon"})
+    r = client.post("/find", json={"image_b64": img_b64, "text": "icon"}, headers=AUTH)
     body = r.get_json()
     check(
         "/find 'icon' returns 2 matches",
@@ -109,7 +133,7 @@ def run():
         body["width"] == 50 and body["height"] == 40,
     )
 
-    r = client.post("/find", json={"image_b64": img_b64, "text": "nope"})
+    r = client.post("/find", json={"image_b64": img_b64, "text": "nope"}, headers=AUTH)
     body = r.get_json()
     check(
         "/find 'nope' returns 0 matches, ok true",
@@ -134,12 +158,13 @@ def run():
     r = client.post(
         "/find",
         json={"image_b64": img_b64, "text": "ICON", "case_sensitive": True},
+        headers=AUTH,
     )
     check(
         "/find case_sensitive=True does not match 'icon'",
         r.status_code == 200 and r.get_json()["count"] == 0,
     )
-    r = client.post("/find", json={"image_b64": img_b64, "text": "ICON"})
+    r = client.post("/find", json={"image_b64": img_b64, "text": "ICON"}, headers=AUTH)
     check(
         "/find default is case-insensitive",
         r.status_code == 200 and r.get_json()["count"] == 2,

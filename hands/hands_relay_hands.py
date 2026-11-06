@@ -6,8 +6,10 @@ One small window. No terminals.
 WHAT IT DOES
   - Starts the relay server on 127.0.0.1:5000 (localhost only -- nothing on
     your network can reach it directly).
-  - Opens a Cloudflare quick tunnel only on opt-in (HANDS_ENABLE_TUNNEL=1);
-    off by default — a public tunnel is a fallback, never the design.
+  - Opens a Cloudflare quick tunnel only on its own explicit opt-in
+    (HANDS_ENABLE_PUBLIC_TUNNEL=1, in addition to
+    HANDS_ENABLE_TUNNEL=1); off by default — a public tunnel is never
+    an automatic fallback from a failed Tailscale Serve.
   - Generates a FRESH strong secret on every launch. The old workflow (one
     fixed secret, reused across sessions) is gone: when you close the app,
     that secret stops existing.
@@ -29,8 +31,9 @@ SECURITY NOTES
     development server.
   - Transport: if Tailscale is installed on this PC, the app uses
     Tailscale Serve -- the relay is then reachable only inside your
-    tailnet and there is NO public URL at all. Otherwise it falls back
-    to a Cloudflare quick tunnel. Responses carry X-Robots-Tag: noindex
+    tailnet and there is NO public URL at all. A public Cloudflare
+    tunnel is a separate explicit opt-in and is never started
+    automatically when Tailscale fails. Responses carry X-Robots-Tag: noindex
     so tunnel URLs stay out of search indexes.
   - pyautogui.FAILSAFE is on: slam the mouse into any screen corner to
     abort the current action.
@@ -297,6 +300,12 @@ _ACT_PATHS = {
     # can collide with, so both sit behind the same WP0b yield.
     "/break",
     "/clipboard/set",
+    # H4: reads are covered too. /clipboard/get can expose a password
+    # the owner just copied, and /screenshot can expose the screen
+    # they are working on, so both yield when the owner is active or
+    # the desktop is locked — the same as any act.
+    "/clipboard/get",
+    "/screenshot",
 }
 
 
@@ -2879,8 +2888,9 @@ class RelayApp:
         log_line(f"session secret generated ({len(SHARED_SECRET)} chars)")
 
         threading.Thread(target=self._run_server, daemon=True).start()
-        # A public tunnel is a fallback, never the default (ROADMAP):
-        # it starts only on an explicit opt-in.
+        # A tunnel starts only on an explicit opt-in, and a public
+        # Cloudflare tunnel needs its own separate opt-in (H5):
+        # HANDS_ENABLE_TUNNEL=1 enables Tailscale Serve only.
         if (os.environ.get("HANDS_ENABLE_TUNNEL") or "").strip().lower() in (
             "1",
             "true",
@@ -2888,7 +2898,11 @@ class RelayApp:
         ):
             threading.Thread(target=self._run_tunnel, daemon=True).start()
         else:
-            log_line("public tunnel disabled (set HANDS_ENABLE_TUNNEL=1 to opt in)")
+            log_line(
+                "tunnel disabled (set HANDS_ENABLE_TUNNEL=1 to opt in; "
+                "a public Cloudflare tunnel additionally needs "
+                "HANDS_ENABLE_PUBLIC_TUNNEL=1)"
+            )
         self._poll()
 
     def _set_icon(self):
@@ -2962,8 +2976,32 @@ class RelayApp:
                 log_line("transport: Tailscale Serve (tailnet only, no public URL)")
                 return
             except Exception as exc:
-                log_line(f"Tailscale Serve failed ({exc}); falling back to Cloudflare")
-        # Fallback transport: Cloudflare quick tunnel (public URL).
+                # H5: a Tailscale failure NEVER falls back to a public
+                # tunnel automatically. A transient failure used to
+                # silently publish the desktop on a public
+                # trycloudflare.com URL; now it stops here, loudly, and
+                # a public tunnel needs its own explicit opt-in.
+                log_line(
+                    f"ERROR: Tailscale Serve failed ({exc}); NOT falling "
+                    "back to a public tunnel — set "
+                    "HANDS_ENABLE_PUBLIC_TUNNEL=1 to opt into Cloudflare "
+                    "explicitly"
+                )
+                return
+        # Public transport: Cloudflare quick tunnel, only on its own
+        # explicit opt-in (HANDS_ENABLE_PUBLIC_TUNNEL=1). It is never a
+        # fallback from a failed Tailscale Serve.
+        if (os.environ.get("HANDS_ENABLE_PUBLIC_TUNNEL") or "").strip().lower() not in (
+            "1",
+            "true",
+            "yes",
+        ):
+            log_line(
+                "Cloudflare quick tunnel not enabled (set "
+                "HANDS_ENABLE_PUBLIC_TUNNEL=1 to opt in explicitly); "
+                "no public URL will be created"
+            )
+            return
         exe = shutil.which("cloudflared")
         if not exe:
             log_line(

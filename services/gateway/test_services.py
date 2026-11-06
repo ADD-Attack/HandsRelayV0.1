@@ -190,6 +190,37 @@ def run():
         check("v1/filedrop: sha mismatch sent nothing to hands",
               not fake.begin_calls)
 
+        # M3: gateway-side filedrop validation rejects traversal and
+        # non-absolute folders before touching the hands.
+        for bad_name in ("../evil.bin", "sub/evil.bin", "sub\\evil.bin"):
+            fake = FakeHands()
+            gateway._hands_post = fake
+            r = client.post(
+                "/v1/filedrop",
+                json={
+                    "folder": "D:\\Drops",
+                    "filename": bad_name,
+                    "data_b64": base64.b64encode(b"x").decode("ascii"),
+                },
+                headers=TOKEN,
+            )
+            check(f"v1/filedrop: bad filename {bad_name!r} -> 400",
+                  r.status_code == 400 and not fake.begin_calls)
+        for bad_folder in ("Drops", "D:\\Drops\\..\\Nope", "/Drops/../Nope"):
+            fake = FakeHands()
+            gateway._hands_post = fake
+            r = client.post(
+                "/v1/filedrop",
+                json={
+                    "folder": bad_folder,
+                    "filename": "a.bin",
+                    "data_b64": base64.b64encode(b"x").decode("ascii"),
+                },
+                headers=TOKEN,
+            )
+            check(f"v1/filedrop: bad folder {bad_folder!r} -> 400",
+                  r.status_code == 400 and not fake.begin_calls)
+
         # Hands errors surface with their status.
         fake = FakeHands()
         fake.fail_begin = (403, {"ok": False, "error": "folder not in file-drop allowlist"})
