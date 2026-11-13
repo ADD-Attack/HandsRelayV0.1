@@ -1,7 +1,7 @@
 """Tests for the R6 dashboard data layer (wishlist #23, first revision).
 
 The dashboard's model builders are pure functions in
-hands_relay_v2_app.py; they are exercised headless with the same
+hands_relay_v4_app.py; they are exercised headless with the same
 stub-and-importlib-from-file pattern test_app.py uses. RelayApp
 itself is never instantiated (it builds a live Tk window).
 """
@@ -30,8 +30,8 @@ sys.modules["pyautogui"] = _fake_gui
 
 
 def _load_app():
-    path = os.path.join(os.path.dirname(__file__), "..", "hands_relay_v2_app.py")
-    name = "hands_relay_v2_app_r6"
+    path = os.path.join(os.path.dirname(__file__), "..", "hands_relay_v4_app.py")
+    name = "hands_relay_v4_app_r6"
     spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module

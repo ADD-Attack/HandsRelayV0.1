@@ -1,4 +1,4 @@
-/* HandsRelay v2 — window styles. System fonts only (offline, CSP self). */
+/* HandsRelay v4 — window styles. System fonts only (offline, CSP self). */
 :root {
   --bg: #0b0d12;
   --bg-2: #10131a;
@@ -214,6 +214,7 @@ body[data-phase="running"] .card-title .ico { color: var(--ok); }
 .chip-held { background: rgba(255, 181, 71, 0.12); color: var(--warn); }
 .chip-bad { background: rgba(255, 92, 108, 0.12); color: var(--bad); }
 .chip-info { background: rgba(122, 140, 255, 0.14); color: #aab6ff; }
+.chip-owner { background: rgba(255, 181, 71, 0.12); color: var(--warn); }
 
 /* ----------------------------------------------------------------- token */
 .token-row { display: flex; align-items: center; gap: 8px; }

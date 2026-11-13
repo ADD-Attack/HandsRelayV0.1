@@ -1,3 +1,5 @@
+> Historical implementation/reference record. Current product and dispositions: [ROADMAP.md](ROADMAP.md) and [COMMISSION-CLOSEOUT.md](COMMISSION-CLOSEOUT.md). Old product names and instructions below are retained as history, not current setup guidance.
+
 # R7.2 fix round — answer to Astra's DEPLOY-NO-GO on `22a9080` (+ Grok)
 
 Branch `v3-r7-2-fix-20261020`, based on `v3-r7-2-20261019` @ `22a9080`. Nothing deployed.

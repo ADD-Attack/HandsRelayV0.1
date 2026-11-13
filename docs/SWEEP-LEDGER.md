@@ -1,4 +1,4 @@
-# R9 wishlist sweep — per-item ledger (Opus takeover, 2026-10-20)
+# R9 wishlist sweep — historical per-item ledger (Opus takeover, 2026-10-20; product line later advanced to v4)
 
 Branch `v3-r9-20261020`; base `d562912` (main `61ff473` = live R7.1 + #5). Source text: docs/WISHLIST-FULL.md.
 Status: done (this round) / already-done (landed before R9; evidence = commit + passing test file) / not-applicable / deferred / R7.2 (owned by the fix round, branch from `22a9080`).

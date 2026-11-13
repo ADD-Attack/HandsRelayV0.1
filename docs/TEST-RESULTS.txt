@@ -1,0 +1,38 @@
+PASS  test_app.py                                       0.4s  ALL PASS
+PASS  test_gateway_token.py                             0.4s  ALL PASS
+PASS  hands/test_actuation.py                           0.4s  ALL PASS
+PASS  hands/test_capture_realism.py                     0.5s  ALL PASS
+PASS  hands/test_elevation.py                           0.5s  ALL PASS
+PASS  hands/test_filedrop_state.py                      0.4s  ALL PASS
+PASS  hands/test_health_gate.py                         0.3s  ALL PASS
+PASS  hands/test_process_wait.py                        6.4s  18 passed in 5.82s
+PASS  services/gateway/test_act_ops.py                  0.4s  ALL PASS
+PASS  services/gateway/test_coordination.py             0.4s  ALL PASS
+PASS  services/gateway/test_find_elevate.py             0.5s  ALL PASS
+PASS  services/gateway/test_receipt_eviction.py         0.4s  ALL PASS
+PASS  services/gateway/test_screen_hash.py              2.4s  ALL PASS
+PASS  services/gateway/test_screen_params.py            0.5s  ALL PASS
+PASS  services/gateway/test_services.py                 3.7s  ALL PASS
+PASS  services/parser/test_find.py                      0.3s  ALL PASS
+PASS  services/parser/test_health_status.py             0.3s  ALL PASS
+PASS  tests/test_display_probe_no_leak.py               0.7s  1 passed in 0.37s
+PASS  tests/test_finish_commission.py                   1.4s  11 passed in 1.00s
+PASS  tests/test_r11_resting_watch.py                   1.0s  27 passed in 0.68s
+PASS  tests/test_r72_fixround.py                        0.8s  23 passed in 0.47s
+PASS  tests/test_r9_display_state.py                    0.8s  7 passed in 0.39s
+PASS  tests/test_r9_gui.py                              1.1s  23 passed in 0.78s
+PASS  tests/test_r9_motion.py                           1.6s  30 passed in 1.18s
+PASS  tests/test_r9_sweep_acts.py                       1.0s  15 passed in 0.60s
+PASS  tests/test_review_app.py                          1.2s  11 passed in 0.85s
+PASS  tests/test_review_gateway.py                      1.5s  20 passed in 1.11s
+PASS  tests/test_review_hands.py                        1.5s  23 passed in 1.16s
+PASS  tests/test_review_parser.py                       0.8s  3 passed in 0.46s
+PASS  tests/test_v3r2_remaining.py                      1.2s  24 passed in 0.85s
+PASS  tests/test_v3r4.py                                1.1s  22 passed in 0.68s
+PASS  tests/test_v3r5.py                                0.8s  5 passed in 0.39s
+PASS  tests/test_v3r6.py                                0.9s  10 passed in 0.46s
+PASS  tests/test_v3r7.py                                1.1s  12 passed in 0.70s
+PASS  tests/test_windows_clipboard_real.py              0.6s  1 skipped in 0.24s
+PASS  tests/test_windows_live_soak.py                   0.6s  2 skipped in 0.23s
+
+36 of 36 suites passed

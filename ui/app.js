@@ -1,4 +1,4 @@
-/* HandsRelay v2 — window logic.
+/* HandsRelay v4 — window logic.
  *
  * Safety rules for this file (reviewers: check these first):
  *  - Every value from the API is written with textContent / dataset /
@@ -18,11 +18,11 @@
   const SERVICES = ["hands", "gateway", "parser"];
   const STATE_CHIP = {
     applied: "chip-ok", held: "chip-held", "refused-yielded": "chip-bad",
-    failed: "chip-bad", expired: "chip-quiet",
+    "aborted-owner": "chip-owner", failed: "chip-bad", expired: "chip-quiet",
   };
   const STATE_COLOR = {
     applied: "#3ddc97", held: "#ffb547", "refused-yielded": "#ff7a59",
-    failed: "#ff5c6c", expired: "#5b6376",
+    "aborted-owner": "#ffb547", failed: "#ff5c6c", expired: "#5b6376",
   };
 
   let logSeq = 0;
@@ -161,6 +161,12 @@
     const parts = [];
     if (watchers.length) parts.push(mode === "watcher" ? watchers.join(", ") : `${watchers.length} watching`);
     parts.push(wt == null ? "watcher timeout —" : `watcher timeout ${dur(wt)}`);
+    const activity = (m && m.watcher_activity) || [];
+    if (activity.length) {
+      parts.push(activity.map((w) => `${w.holder}: poll ${dur(w.last_poll_ago_s)} ago`).join("; "));
+    } else {
+      parts.push("no active poller");
+    }
     setText($("watcher-setting"), parts.join(" · "));
   }
 
@@ -229,7 +235,7 @@
         if (i === 2) {
           const chip = document.createElement("span");
           chip.className = `chip ${STATE_CHIP[row.state] || "chip-info"}`;
-          chip.textContent = row.state;
+          chip.textContent = row.state === "aborted-owner" ? "owner took over" : row.state;
           td.appendChild(chip);
         } else {
           td.textContent = v;

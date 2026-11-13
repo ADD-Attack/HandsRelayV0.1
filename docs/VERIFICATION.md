@@ -122,9 +122,9 @@ logic only.
 - `GET /windows` on the real host: titles, process names, pids and
   `bounds` line up with Task Manager and a screen ruler; multi-monitor:
   `monitor` indices match the actual display containing each window's
-  centre (verified against Display Settings arrangement).
+  center (verified against Display Settings arrangement).
 - `POST /focus`: a Notepad window titled "Untitled - Notepad" focuses on
-  a substring match and comes out of minimised state (SW_RESTORE path).
+  a substring match and comes out of minimized state (SW_RESTORE path).
   **Foreground lock:** `SetForegroundWindow` can be refused when the
   hands has no foreground rights; the classic workaround
   (AttachThreadInput) is deliberately out of scope for P4. If focus
@@ -162,7 +162,7 @@ logic only.
   by the gateway. The sized formula gives 848 s for it, clamped to the
   600 s cap; the paste path returns long before either. Note the cap
   exists: a pure-keystroke type far beyond ~3,500 chars can outrun
-  even the sized timeout — that is accepted P4 behaviour, paste is the
+  even the sized timeout — that is accepted P4 behavior, paste is the
   route for very long text.
 
 ## P4 — break + hotkey (#19)
@@ -248,7 +248,7 @@ automated tests.
 ### Run-key autostart on real login
 
 1. Build/run the packaged app, tick **Start on login**.
-2. Confirm the value `HandsRelay v2` exists under
+2. Confirm the value `HandsRelay v4` exists under
    `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` (regedit or
    `reg query`) and points at the app.
 3. Sign out and back in: the app window should appear on login.
@@ -398,18 +398,18 @@ hands/motion.py). Needs the WebView2 runtime (present on Win10/11).
 
 Everything below is stub-tested off Windows (tests/test_review_*.py,
 tests/test_display_probe_no_leak.py); these steps need the real PC and
-the rebuilt "HandsRelay v2.exe". The finding IDs match
+the rebuilt "HandsRelay v4.exe". The finding IDs match
 docs/REVIEW-FIXES-2026-11.md.
 
 1. **L1 memory leak.** `set RELAY_LIVE_SOAK=1` then
    `python -m pytest -q tests/test_windows_live_soak.py` (calls the real
    Win32 probe behind /state 2000x; read-only) — both tests pass. Then
    press Start in the app and leave it running for 2+ hours: Task Manager
-   → Details → "HandsRelay v2.exe" memory stays flat after warm-up. The
+   → Details → "HandsRelay v4.exe" memory stays flat after warm-up. The
    old build grew ~2-4 MB per hour from the 5 s /v1/info poll alone.
 2. **E1 focus without pywin32.** On the packaged exe, `GET /v1/windows`:
    if every window shows `"process": null`, pywin32 is not bundled (the
-   case the fix targets). Open Notepad, minimise it, then
+   case the fix targets). Open Notepad, minimize it, then
    `POST /v1/act {"op": "focus", "title": "Notepad"}` → 200 and Notepad is
    restored in front (it used to be 409 "activation failed" every time).
 3. **E1 held-act pin.** While moving the mouse yourself,
@@ -438,10 +438,25 @@ docs/REVIEW-FIXES-2026-11.md.
    torch): start it without weights, run fetch_weights.py, and within 60 s
    `GET /health` shows `"model_loaded": true` without any /parse call.
 10. **E9 scripts.** `hands\build_hands_relay.bat` builds HandsRelay.exe and
-    it starts (motion.py is bundled). `start-v2.bat` with the pasted hands
+    it starts (motion.py is bundled). `start-v4.bat` with the pasted hands
     secret gives `/v1/info` `"hands_reachable": true` and the printed
     token works (values no longer carry a trailing space).
 11. **I1 bind address.** The window log line "Gateway listening on ..."
     names the bind address; with `RELAY_GATEWAY_HOST=127.0.0.1` set before
     launching, the gateway is no longer reachable from another machine on
     the LAN.
+
+
+## Finish commission — v4 changes (2026-11-13)
+
+These checks are **live-unverified**. No production relay was changed.
+
+- Upgrade with the two existing `.HandsRelayV0.1` credential files in place: both must be reused, not regenerated. The legacy path is intentionally retained.
+- Toggle Start on login: the v4 Run value must replace the old v2 value; disabling removes both. Merely opening the app does not change the registry.
+- With a disposable Notepad target, request paste typing, then test physical takeover and locking before injection. The response must identify `method_used: paste`, guard mode, abort reason, and landed character count. Foreground changes during clipboard preparation refuse the paste. A paste already sent cannot be retracted; never blindly replay an aborted payload.
+- Generate an owner-aborted queued type: Recent Acts must show “owner took over”; the held receipt must settle without replay.
+- Send watcher heartbeats and verify the dashboard's last-poll age updates; stop heartbeats and check timeout removal. Paused-versus-stopped is not inferred.
+- Observe the resting pointer's 120 ms interpolated move on the real desktop and confirm physical takeover wins. The automated duration check is not a subjective motion-quality check.
+- Build on Windows with `build_app.bat`, launch the v4 executable, and verify Start/Stop and the compatibility launchers in an isolated checkout. This Linux commission did not build or launch a Windows executable.
+
+Automated command and exact counts for the delivered source are recorded in `COMMISSION-CLOSEOUT.md`. Remote CI is not claimed green without a run for that commit.

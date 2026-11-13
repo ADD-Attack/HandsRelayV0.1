@@ -252,11 +252,11 @@ def plan_move(x0, y0, x1, y1, rng, width=None, path_seconds=None):
 
 
 def landing_point(cx, cy, w, h, rng):
-    """Click point inside a w x h box centred on (cx, cy) (#29).
+    """Click point inside a w x h box centered on (cx, cy) (#29).
 
-    Gaussian, centre-weighted (sd = size/6); about 1 in 20 draws use a
+    Gaussian, center-weighted (sd = size/6); about 1 in 20 draws use a
     wider sd so edge hits happen. Always clamped inside the box with a
-    1 px margin. No box (w or h missing/< 3) -> the exact centre.
+    1 px margin. No box (w or h missing/< 3) -> the exact center.
     """
     try:
         w, h = float(w), float(h)

@@ -46,7 +46,7 @@ WHAT MUSE CAN DO WITH IT (unchanged from cursor_relay.py)
   POST /scroll  {clicks}    scroll
   Every call except /health needs header  X-Secret: <the app's secret>
 
-ADDED IN V3-P4 (wishlist #3, #4, #6, #9, #19) — same X-Secret gate:
+WINDOW, CLIPBOARD AND INPUT OPERATIONS — same X-Secret gate:
   POST /hotkey  {keys: ["ctrl", "l"]}   press a true key chord
   POST /break   {times?: 1..3}          Ctrl+C chord(s) — see its docstring
   POST /drag    {x1, y1, x2, y2, button?, duration?}
@@ -61,7 +61,7 @@ ADDED IN V3-P4 (wishlist #3, #4, #6, #9, #19) — same X-Secret gate:
                                         reads in the app window.
   POST /type also accepts {method: "auto"|"paste"|"keys"}: long text can
   go through the clipboard (paste) instead of slow keystrokes.
-CAPTURE + INPUT REALISM (v3)
+CAPTURE + INPUT REALISM
   GET /screenshot?monitor=N   capture monitor N (0-based) only
   GET /screenshot?region=x,y,w,h
                                capture that rect in virtual-desktop coords
@@ -108,7 +108,7 @@ SHARED_SECRET = secrets_mod.token_urlsafe(24)
 
 pyautogui.FAILSAFE = True
 # R4 (F2): PAUSE stays 0. pyautogui's PAUSE sleeps after EVERY call, and
-# the v3 input-realism planners (_plan_path, _plan_key_delays) already
+# the input-realism planners (_plan_path, _plan_key_delays) already
 # own the deliberate delay budget — a global 0.15 s tax per call made a
 # ~50-step mouse path pay ~7.5 s on top of its planned 0.3-1.1 s and
 # capped typing at ~3-5 chars/s regardless of the jitter plan. FAILSAFE
@@ -869,7 +869,7 @@ def move():
 def click():
     """Click at (x, y). Human mode (default, R9 #24/#29/#30):
 
-    optional {w, h}: the target box centred on (x, y) — the landing
+    optional {w, h}: the target box centered on (x, y) — the landing
     point is Gaussian inside it and its size sets the Fitts speed;
     optional attention (default true) + text_chars: the pre-move
     hesitation. Timing is fitted to the +0.5 s per-click budget.
@@ -1031,9 +1031,13 @@ def type_text():
         return "keys"
 
     def _paste():
+        nonlocal typed
         backend = _clipboard_backend()
         if backend is None:
             raise RuntimeError("clipboard unavailable on this host")
+        guard = _TypeOwnerGuard()
+        state["guard"] = guard.mode
+        target_hwnd = _foreground_hwnd()
         saved, readable = None, False
         try:
             saved = backend.get_text()
@@ -1042,11 +1046,28 @@ def type_text():
             pass  # unreadable clipboard: paste anyway, skip the restore
         try:
             backend.set_text(text)
+            # The paste path has its own provenance checks; it must not
+            # inherit the keystroke guard's coverage by implication.
+            if guard.sample():
+                state["reason"] = "owner"
+                return "paste"
+            if _probe_locked() is True:
+                state["reason"] = "locked"
+                return "paste"
+            if target_hwnd is not None and _foreground_hwnd() != target_hwnd:
+                state["reason"] = "foreground"
+                return "paste"
             pyautogui.hotkey("ctrl", "v")
+            typed = len(text)  # paste is atomic from the relay's perspective
+            guard.after_write()
             if readable:
-                # Give the target app a beat to consume the paste before the
-                # previous clipboard contents go back.
+                # Let the target consume the paste before restoring the
+                # previous clipboard contents.
                 time.sleep(0.1)
+            if guard.sample():
+                state["reason"] = "owner"
+            elif _probe_locked() is True:
+                state["reason"] = "locked"
         finally:
             if readable and saved is not None:
                 try:
@@ -1058,7 +1079,7 @@ def type_text():
     with _input("keys"):
         method_used, note = _type_dispatch(method, _keys, _paste, text)
 
-    if method_used == "keys" and typed < len(text):
+    if state["reason"] is not None or (method_used == "keys" and typed < len(text)):
         return (
             jsonify(
                 {
@@ -1073,7 +1094,9 @@ def type_text():
                     "error": (
                         f"desktop locked — typing aborted at char {typed}"
                         if state["reason"] == "locked"
-                        else f"owner became active — typing aborted at char {typed}"
+                        else (f"foreground changed — typing aborted at char {typed}"
+                              if state["reason"] == "foreground"
+                              else f"owner became active — typing aborted at char {typed}")
                     ),
                     "error_code": "type_aborted",
                     "abort_reason": state["reason"],
@@ -1081,7 +1104,7 @@ def type_text():
                     "aborted": True,
                     "chars_typed": typed,
                     "chars": len(text),
-                    "method_used": "keys",
+                    "method_used": method_used,
                     "elapsed_seconds": round(time.monotonic() - started, 3),
                     "delays_planned": len(delays),
                     "planned_seconds": sum(delays[:typed]),
@@ -1841,7 +1864,7 @@ class _RestingHand:
         # Record BEFORE injecting: a concurrent yield probe must already
         # see this span as ours.
         _LEDGER.record(t0, (t0 + 250) & 0xFFFFFFFF)
-        pyautogui.moveTo(target[0], target[1], duration=0)
+        pyautogui.moveTo(target[0], target[1], duration=0.12)
         px, py = pyautogui.position()
         _LEDGER.truncate_last((_tick_ms() + 50) & 0xFFFFFFFF)
         if abs(px - target[0]) > 1 or abs(py - target[1]) > 1:
@@ -2161,7 +2184,7 @@ def filedrop_abort():
     if not existed:
         return jsonify({"ok": False, "error": "unknown upload_id"}), 404
     return jsonify({"ok": True})
-# ------------------------------------------------- V3-P4: chords + break
+# ------------------------------------------------- Actuation: chords + break
 
 @app.post("/hotkey")
 def hotkey():
@@ -2206,7 +2229,7 @@ def break_():
     return {"ok": True, "times": times}
 
 
-# ------------------------------------------------------- V3-P4: dragging
+# ------------------------------------------------------- Actuation: dragging
 
 @app.post("/drag")
 def drag():
@@ -2253,10 +2276,10 @@ def drag():
     return {"ok": True}
 
 
-# ------------------------------------------- V3-P4: windows + focus (#3)
+# ------------------------------------------- Actuation: windows + focus (#3)
 
 def _monitor_for_bounds(bounds, rects=None):
-    """Index of the monitor rect containing the window's centre, else None."""
+    """Index of the monitor rect containing the window's center, else None."""
     if rects is None:
         rects = _monitor_rects()
     cx = bounds["x"] + bounds["w"] / 2
@@ -2423,7 +2446,7 @@ def _windows_supported():
 def _activate_window(win):
     """Bring one raw window dict to the foreground (the seam tests stub).
 
-    On Windows: restore first if minimised, then SetForegroundWindow.
+    On Windows: restore first if minimized, then SetForegroundWindow.
     The well-known foreground-lock workaround (AttachThreadInput) is
     deliberately out of scope here — see docs/VERIFICATION.md.
     Returns True only when activation was applied.
@@ -2501,7 +2524,7 @@ def focus():
     return jsonify({"ok": False, "error": f"no window matching {title!r}"}), 404
 
 
-# ---------------------------------------------- V3-P4: clipboard (#6)
+# ---------------------------------------------- Actuation: clipboard (#6)
 
 CF_UNICODETEXT = 13
 
@@ -3009,7 +3032,7 @@ class RelayApp:
                 _resolve_elevation(req.get("id"), False)
                 self._append_log(
                     f"elevation request '{req.get('name')}' denied: approvals "
-                    "need the packaged HandsRelay v2 app"
+                    "need the packaged HandsRelay v4 app"
                 )
         except queue.Empty:
             pass

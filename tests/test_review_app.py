@@ -32,7 +32,7 @@ def _load(rel, tag):
 
 @pytest.fixture(scope="module")
 def appmod():
-    return _load("hands_relay_v2_app.py", "review_app")
+    return _load("hands_relay_v4_app.py", "review_app")
 
 
 @pytest.fixture
