@@ -3,7 +3,7 @@ REM ============================================================
 REM  Builds the STANDALONE hands app "HandsRelay.exe" (split setup:
 REM  gateway and parser run elsewhere, e.g. under Docker) and puts
 REM  it on your Desktop. Most setups want the packaged app instead:
-REM  build_app.bat in the repo root builds "HandsRelay v2.exe".
+REM  build_app.bat in the repo root builds "HandsRelay v4.exe".
 REM
 REM  Run it from this folder (hands\) of the repo checkout.
 REM  It takes a few minutes.

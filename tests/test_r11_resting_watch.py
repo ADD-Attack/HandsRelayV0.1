@@ -42,7 +42,7 @@ def gw():
 
 @pytest.fixture(scope="module")
 def appmod():
-    return _load("hands_relay_v2_app.py", "r11_app")
+    return _load("hands_relay_v4_app.py", "r11_app")
 
 
 # ============================================================ ramp profile
@@ -96,7 +96,7 @@ class _Pag:
         return self.pos
 
     def moveTo(self, x, y, duration=None):
-        self.moves.append((x, y))
+        self.moves.append((x, y, duration))
         self.pos = (int(round(x)), int(round(y)))
         self.tick["last_input"] = self.tick["t"]  # the OS counts injected input
 
@@ -137,8 +137,9 @@ def test_resting_hand_only_while_claim_held(hands, rig):
     assert r.set_claim(True, 900, 1, clock["t"])
     _run(r, clock, tick, 120.0)
     assert pag.moves and r.status()["active"] and r.status()["claim_held"]
+    assert all(duration == 0.12 for _x, _y, duration in pag.moves)
     # every float stays local to where the pointer rested
-    assert all(abs(x - 500) <= 4 and abs(y - 500) <= 4 for x, y in pag.moves)
+    assert all(abs(x - 500) <= 4 and abs(y - 500) <= 4 for x, y, _duration in pag.moves)
     assert r.set_claim(False, 0, 2, clock["t"])
     n = len(pag.moves)
     _run(r, clock, tick, 130.0)
@@ -386,7 +387,7 @@ def test_mode_indicator_model(appmod):
 # ============================================================ GUI layout
 
 def test_default_window_is_the_minimum_size():
-    src = (ROOT / "hands_relay_v2_app.py").read_text(encoding="utf-8")
+    src = (ROOT / "hands_relay_v4_app.py").read_text(encoding="utf-8")
     w = int(re.search(r"width=(\d+),", src).group(1))
     h = int(re.search(r"height=(\d+),", src).group(1))
     mn = tuple(int(v) for v in re.search(r"min_size=\((\d+), (\d+)\)", src).groups())

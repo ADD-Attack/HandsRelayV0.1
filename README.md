@@ -1,10 +1,10 @@
-# HandsRelay v2
+# HandsRelay v4
 
 Let a personal AI agent operate a Windows PC — screenshots,
 mouse, keyboard — with a security posture designed for leaving it reachable
 while the owner is away from home.
 
-v2 is a rebuild of the single-file HandsRelay around three parts:
+HandsRelay v4 has three parts:
 
 | Part | Runs where | What it does |
 | --- | --- | --- |
@@ -12,18 +12,21 @@ v2 is a rebuild of the single-file HandsRelay around three parts:
 | **gateway** | Docker or native Python | The agent-facing API: token auth, failed-guess lockout, routing of screen/action calls to the hands and parse calls to the parser. This is the only surface the agent talks to. |
 | **parser** | Docker or native Python (GPU optional) | Screen parsing (OmniParser-class): screenshot in → labeled, numbered UI elements out, for surfaces with no DOM and no UI Automation tree (games, canvas, custom UI). Optional component; the relay works without it. |
 
-Roadmap (what we're stealing from browser-use, UFO², and OmniParser, and in
-what order): [docs/ROADMAP.md](docs/ROADMAP.md).
+The project roadmap is in [docs/ROADMAP.md](docs/ROADMAP.md); item dispositions and verification limits are in [docs/COMMISSION-CLOSEOUT.md](docs/COMMISSION-CLOSEOUT.md).
+
+## Prerequisites
+
+Use Windows 10/11 with an interactive desktop session and Python 3.11–3.13 on PATH (`python --version`). Open a terminal in the repository root. Building the native app installs dependencies from PyPI; Docker is optional and is only for the gateway and parser. Never run two copies on the same service ports.
 
 ## Packaged app (Windows) — the normal way to run it
 
 One icon, one button. Build once:
 
 ```
-build_app.bat   :: builds "HandsRelay v2.exe"
+build_app.bat   :: builds "HandsRelay v4.exe"
 ```
 
-Then just double-click **HandsRelay v2.exe** and press **Start**. The one
+Then just double-click **HandsRelay v4.exe** and press **Start**. The one
 window runs all three parts in-process — hands on 127.0.0.1:5000, gateway on
 :5010, parser on :5011 — with a status line for each. **Stop** (or closing the
 window) stops everything. No other app is needed: the v1 relay is retired,
@@ -31,6 +34,8 @@ and the hands run headless inside this app (no separate window, no tunnel —
 the gateway is the only surface an agent talks to).
 
 Secrets in the packaged app:
+
+The historical `.HandsRelayV0.1` directory is retained as a compatibility storage path. Upgrades reuse both existing credential files; the folder name is not the product version.
 
 - The **gateway token** persists per machine at
   `%USERPROFILE%\.HandsRelayV0.1\gateway-token.txt` — generated on first
@@ -55,17 +60,30 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Native (PowerShell, on the Windows PC itself):
+Native services (PowerShell, from the repository root; run each service in its own terminal):
 
-```
-cd services\parser;  pip install -r requirements.txt;  python app.py
-cd services\gateway; pip install -r requirements.txt
-$env:RELAY_GATEWAY_TOKEN = "<long random token>"
-$env:HANDS_URL    = "http://127.0.0.1:5000"
-$env:HANDS_SECRET = "<the hands app's current session secret>"
-$env:PARSER_URL   = "http://127.0.0.1:5011"
-python app.py
-```
+1. Start the standalone hands app and keep its window open. Copy the current hands secret from that window. For the all-in-one packaged install, use the packaged app instead of following this split-services procedure.
+2. In terminal 1, start the parser:
+
+   ```powershell
+   Set-Location .\services\parser
+   python -m pip install -r requirements.txt
+   python app.py
+   ```
+
+3. In terminal 2, start the gateway (replace the example values locally; never commit them):
+
+   ```powershell
+   Set-Location .\services\gateway
+   python -m pip install -r requirements.txt
+   $env:RELAY_GATEWAY_TOKEN = "<long random token>"
+   $env:HANDS_URL = "http://127.0.0.1:5000"
+   $env:HANDS_SECRET = "<secret shown by the standalone hands app>"
+   $env:PARSER_URL = "http://127.0.0.1:5011"
+   python app.py
+   ```
+
+   When using the packaged app, its dashboard starts the gateway and parser for you; do not start duplicate service processes. The secret above is only needed for this split native setup.
 
 - Gateway: http://127.0.0.1:5010/health — agent API under /v1 (screen, screen/hash, monitors, windows, clipboard, act, act/queued, hands/claim, hands/release, parse, find, elevate, info, filedrop, wait)
 - Parser: http://127.0.0.1:5011/health — reports whether the model is loaded
@@ -85,10 +103,7 @@ The parser answers /parse only once OmniParser v2 weights are in its
 models directory (`python services/parser/fetch_weights.py`, heavy deps in
 `services/parser/requirements-model.txt`). Until then it returns 501 —
 deliberately: a driver must never mistake "no model" for "empty screen".
-The parser has no auth of its own, so it listens on loopback by default —
-standalone and in the packaged app alike; the Docker deployment sets
-`PARSER_HOST=0.0.0.0` (in docker-compose.yml) for its internal network,
-where the published port is already bound to 127.0.0.1 on the host.
+The parser has no auth of its own, so it listens on loopback by default. Docker binds its published port to `127.0.0.1` on the host and uses `PARSER_HOST=0.0.0.0` only inside the private compose network.
 
 ## Coordination: hands claim + queued act
 
@@ -155,7 +170,9 @@ Plain `POST /v1/act` surfaces that as-is and is unchanged.
   held in memory only while the receipt is held and dropped when it
   settles.
 
-**File-drop (gateway):** `POST /v1/filedrop` with
+## File drop
+
+`POST /v1/filedrop` with
 `{"folder", "filename", "data_b64", "sha256"?}` drops one file onto the
 PC in a single call. The gateway computes the SHA-256 itself when it is
 not supplied, verifies it against a supplied one before sending anything
@@ -177,7 +194,9 @@ which wins when set). With no allowlist configured, every filedrop
 endpoint returns 501. Filenames must be bare names — no path separators
 or `..`.
 
-**Wait-for (gateway):** `POST /v1/wait` with
+## Wait for a condition
+
+`POST /v1/wait` with
 `{"condition": {...}, "timeout_seconds": 30, "poll_seconds": 1}` polls
 until a condition holds or the deadline passes, returning
 `{"ok": true, "held": true, "waited_seconds": ..., "condition": ...}`
@@ -198,7 +217,9 @@ immediately instead of burning the timeout), and
 startup and retries a failed load every 60 s, `PARSER_RETRY_SECONDS`, so
 weights fetched while it runs are picked up without a restart).
 
-**PC lock/sleep state:** the hands' `GET /state` returns
+## PC lock and sleep state
+
+The hands' `GET /state` returns
 `{"ok": true, "platform": "windows"|"other", "locked": true|false|null,
 "idle_seconds": number|null}` — on Windows the lock state comes from
 the input desktop (`Winlogon` means locked) and idle time from the
@@ -207,9 +228,10 @@ are `null` (never a 500). The hands also expose `GET /window_titles`
 (`{"ok": true, "titles": [...]}`). The gateway's `GET /v1/info` now
 carries a `"pc_state"` field with the hands' `/state` payload, fetched
 inside the same 5-second-cached reachability probe as the other info
-fields; it is `null` when the hands is unreachable or `/state` errors,
+fields; it is `null` when the hands service is unreachable or `/state` errors,
 and all existing `/v1/info` fields are unchanged.
-## Actuation (v3 P4 — wishlist #3, #4, #6, #9, #19)
+## Actuation
+
 
 New hands routes, all behind the same X-Secret gate as the existing
 routes (and, through the gateway, the same X-Relay-Token gate):
@@ -220,7 +242,7 @@ routes (and, through the gateway, the same X-Relay-Token gate):
 | `POST /break {times?: 1..3}` | act op `break` | Ctrl+C chord(s), 0.15 s apart. |
 | `POST /drag {x1, y1, x2, y2, button?, duration?}` | act op `drag` | Mouse-down at the start point, move, mouse-up at the end point. |
 | `GET /windows` | `GET /v1/windows` | Open windows: title, process, pid, bounds, monitor index, visible, focused. Off Windows it returns an empty list with `"supported": false`. |
-| `POST /focus {title, exact?}` | act op `focus` | Focus the first window whose title matches (substring, case-insensitive; full-title when `exact` is true); restores a minimised window first. No match → 404. Works without pywin32 (ctypes); pywin32, when installed, only adds process names to `/windows`. |
+| `POST /focus {title, exact?}` | act op `focus` | Focus the first window whose title matches (substring, case-insensitive; full-title when `exact` is true); restores a minimized window first. No match → 404. Works without pywin32 (ctypes); pywin32, when installed, only adds process names to `/windows`. |
 | `POST /clipboard/set {text}` | act op `clipboard_set` | Set the clipboard (Windows: ctypes `CF_UNICODETEXT`; else pyperclip when importable; otherwise 501). |
 | `GET /clipboard/get` | `GET /v1/clipboard` | Read the clipboard (same backends, same 501 when unavailable). |
 
@@ -242,16 +264,17 @@ never a real chord — nothing was interrupted. `/break` and `/hotkey`
 send true chords via `pyautogui.hotkey()`, so the interrupt lands.
 
 **Fast `/type`:** `POST /type` now also accepts
-`{method: "auto"|"paste"|"keys"}` (absent = the old behaviour for short
+`{method: "auto"|"paste"|"keys"}` (absent = the old behavior for short
 text). In `auto`, text over 120 chars goes through the clipboard when a
 backend exists: the current clipboard is saved, replaced with the text,
 pasted with Ctrl+V, then restored. Any clipboard failure falls back to
 keystrokes rather than failing, and the response reports what happened:
 `{"ok": true, "method_used": "paste"|"keys", "chars": n,
-"elapsed_seconds": x}`. On the gateway, the act timeout for `type` is
+"elapsed_seconds": x}`. Paste responses also report `owner_guard`. Before injection, owner input, locking, or a changed foreground refuses the paste; after injection, a takeover reports `chars_typed` and `type_aborted` without replay. A paste already sent cannot be retracted. Queued owner aborts settle as `aborted-owner`, not as a relay failure. On the gateway, the act timeout for `type` is
 sized to the payload — `max(30, min(600, 15 + len(text)/6))` seconds,
 since the keystroke path runs at worst ~6 chars/s — while every other
 op keeps the flat 30 s.
+
 ## Capture variants (hands + gateway)
 
 `GET /v1/monitors` lists the monitors as rectangles in virtual-desktop
@@ -297,7 +320,10 @@ timing and geometry are unit-tested off-desktop
 Live-only verification steps for these features (real multi-monitor
 geometry, negative-origin regions, jitter/dynamics feel) are listed in
 [docs/VERIFICATION.md](docs/VERIFICATION.md).
-**Find text on screen:** `POST /v1/find` (parser: `POST /find`) with
+
+## Find text on screen
+
+`POST /v1/find` (parser: `POST /find`) with
 `{"image_b64": "...", "text": "...", "case_sensitive": false}` runs the
 same parse pipeline and returns only the elements whose label contains
 the text — `{"ok": true, "matches": [...], "count": N, "width": W,
@@ -309,7 +335,7 @@ with no model loaded, /find returns the same 501 as /parse.
 
 - **Start on login** (opt-in, off by default): the checkbox under the
   Start/Stop row in the packaged app writes/removes the value
-  `HandsRelay v2` under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`,
+  `HandsRelay v4` under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`,
   pointing at the app (the quoted executable when frozen, quoted Python
   plus the quoted script when run from source). Nothing is written until
   the owner toggles it.
@@ -351,27 +377,15 @@ elevated launch without ever being able to cause one:
 
 The hands run **inside the packaged app** (above) — same Flask routes from
 `hands/hands_relay_hands.py`, served headless on 127.0.0.1:5000 by the app
-process, with the app-owned persistent secret described above. The
-standalone hands window's Cloudflare quick tunnel is opt-in
-(`HANDS_ENABLE_TUNNEL=1`) and off by default — a public tunnel is a
-fallback, never the design.
-
-For a split deployment (services run separately, e.g. under Docker), the
-standalone hands app is still available:
+process, with the app-owned persistent secret described above. The standalone hands app supports split deployments; its optional transport settings are documented in [hands/README.md](hands/README.md). For a split deployment (services run separately, e.g. under Docker):
 
 ```
 cd hands
 build_hands_relay.bat   :: builds "HandsRelay.exe" (standalone hands)
 ```
 
-`start-v2.bat` then starts the parser and gateway in console windows for
-that split setup; it asks for the hands app's session secret.
-
-Standalone, the hands app works as it always did: per-session generated
-secret shown in its window, constant-time compare, lockout with phone
-alerts (ntfy), Waitress, Tailscale Serve preferred over any public tunnel,
-no public URL at all when Tailscale is present. In that mode you copy its
-session secret into the gateway's `HANDS_SECRET` yourself.
+`start-v4.bat` starts the parser and gateway in console windows for this
+split setup and asks for the hands app's current secret.
 
 ## Security model
 
@@ -381,20 +395,20 @@ session secret into the gateway's `HANDS_SECRET` yourself.
   is what protects it. Set `RELAY_GATEWAY_HOST=127.0.0.1` when the gateway
   is only reached through Tailscale Serve or a local proxy (the app window
   logs where the gateway listens). Docker publishes it on 127.0.0.1 only.
-  Preferred transport is Tailscale (tailnet-only); a public tunnel is a
-  fallback, never the design.
-- Two credentials are stored, both app-owned in the user's profile
-  (`%USERPROFILE%\.HandsRelayV0.1\`): the gateway token (what the agent
-  presents) and the hands secret (only ever used on the localhost
-  gateway↔hands link — it never crosses the network). Delete a file to
-  rotate it. (The standalone hands app still uses a per-session secret.)
+  Tailscale is the preferred remote transport. Public tunnels are disabled by default.
+- Two credentials are stored in the existing per-user compatibility directory
+  (`%USERPROFILE%\.HandsRelayV0.1\`): the gateway token (presented by the
+  agent) and the hands secret (used only on the local gateway-to-hands link).
+  This directory name is intentionally retained so upgrades continue using
+  existing credentials; do not rename or move it during an upgrade. Delete a
+  credential file only to rotate that credential. The standalone hands app
+  creates a fresh hands secret for each launch.
 - Failed auth attempts are logged; 10 in 10 minutes from one address
   pauses auth for that address for 5 minutes. Gateway rejections and
   lockouts appear in the packaged app's log, and a lockout pushes a phone
   alert through the hands' ntfy topic (a standalone gateway alerts via
   `RELAY_NTFY_TOPIC`). The standalone hands app alerts on its own lockouts.
-- Design rule inherited from v1's audit: the URL is obscurity, not a
-  control — the secret and the transport are the controls.
+- Design rule inherited from v1's audit: the URL is not an access control; authentication and the transport are.
 
 ## Running the tests
 
@@ -409,7 +423,7 @@ pytest test functions via `python -m pytest`, the older script-style
 files (`run()` + `check()`) directly. Plain `pytest` at the root is not
 equivalent — it collects nothing from the script-style files. CI runs the
 same command on every push and pull request
-(`.github/workflows/tests.yml`). Windows-live behaviour (real actuation,
+(`.github/workflows/tests.yml`). Windows-live behavior (real actuation,
 hooks, UAC, lock detection, the display probe) is stub-tested only; the
 live checklist, including the memory soak, is in
 [docs/VERIFICATION.md](docs/VERIFICATION.md).

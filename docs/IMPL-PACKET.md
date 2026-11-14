@@ -1,3 +1,5 @@
+> Historical implementation/reference record. Current product and dispositions: [ROADMAP.md](ROADMAP.md) and [COMMISSION-CLOSEOUT.md](COMMISSION-CLOSEOUT.md). Old product names and instructions below are retained as history, not current setup guidance.
+
 # Astra implementation packet — R7.2 fix round + R9 wishlist build + R9 web GUI
 Assembled 2026-10-20 by Muse (operator/producer) for a fresh Astra session.
 Owner direction (Christopher, 2026-10-20 05:21 CDT): **Astra implements this round** — you are the builder, not the reviewer.

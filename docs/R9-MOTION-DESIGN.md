@@ -1,3 +1,5 @@
+> Historical implementation/reference record. Current product and dispositions: [ROADMAP.md](ROADMAP.md) and [COMMISSION-CLOSEOUT.md](COMMISSION-CLOSEOUT.md). Old product names and instructions below are retained as history, not current setup guidance.
+
 # R9 Stage 2 — human-like pointer system + idle jiggler (design note)
 
 Wishlist #24, #28, #29, #30, built as ONE system: `hands/motion.py` (pure

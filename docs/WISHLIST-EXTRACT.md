@@ -1,3 +1,5 @@
+> Historical implementation/reference record. Current product and dispositions: [ROADMAP.md](ROADMAP.md) and [COMMISSION-CLOSEOUT.md](COMMISSION-CLOSEOUT.md). Old product names and instructions below are retained as history, not current setup guidance.
+
 15. **Hands claim flag + queue** — a gateway-visible claim record (who holds
     hands, for what job, since when) that a session sets on claim, clears on
     release, and every session reads before driving; plus a simple queue so a
@@ -114,3 +116,8 @@
     STAYS on this wishlist as its own item for later — not part of the
     R6 build. Pick it up when Christopher calls for it.
 
+
+
+## Current disposition summary (2026-11-13)
+
+Items 15–24 were implemented in the R9/current tree; see `SWEEP-LEDGER.md`. The versioned full wishlist records the closure of items 31–37. Item 25 is explicitly declined as a separate redesign in this commission; the existing dashboard is retained with targeted polish. See COMMISSION-CLOSEOUT.md for all 37 final dispositions.

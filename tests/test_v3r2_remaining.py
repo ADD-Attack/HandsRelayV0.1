@@ -36,7 +36,7 @@ def parser():
 
 @pytest.fixture(scope="module")
 def packaged():
-    return _load("hands_relay_v2_app.py")
+    return _load("hands_relay_v4_app.py")
 
 
 def _ui_class(mod):

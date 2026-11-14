@@ -81,7 +81,7 @@ branch with faked DLLs and fails on the old code (+500 classes / 500 calls).
 1. **Gateway bind (I1)** — left at `0.0.0.0` so an agent that reaches the PC
    by its tailnet IP keeps working; the README now says so. If the agent goes
    through Tailscale Serve, set `RELAY_GATEWAY_HOST=127.0.0.1` (or flip the
-   default in `hands_relay_v2_app.py` `SERVICE_HOSTS`).
+   default in `hands_relay_v4_app.py` `SERVICE_HOSTS`).
 2. **Claim queue (L2)** — a queue head that does not claim within its 30 s
    window now loses its slot (it can re-queue at the back). Waiters must
    re-POST `{"queue": true}` at least hourly; max 32 waiters.

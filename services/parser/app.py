@@ -1,4 +1,4 @@
-"""HandsRelay v2 — parser service.
+"""HandsRelay v4 — parser service.
 
 Screen parsing for surfaces with no DOM and no UI Automation tree (games,
 canvas, custom-drawn UI): screenshot in, labeled + numbered elements out —

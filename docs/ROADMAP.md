@@ -1,213 +1,28 @@
-# HandsRelay v2 — execution brief for Claude Opus 5.5
+# HandsRelay v4 roadmap closeout
 
-_You are Claude Opus 5.5, working in the repo `ADD-Attack/HandsRelayV0.1`.
-Your job: complete the work packages below, in order, testing as you go,
-and commit your work. This file is your spec — if something here conflicts
-with the code, trust the code for current state and this file for intent,
-and note the conflict in your handoff report._
+This file replaces the original implementation prompt, which described an early v2-era tree and is not an accurate description of the current repository. The product line is HandsRelay v4. The GitHub repository still has the historical `HandsRelayV0.1` slug; renaming that remote is an owner-controlled action and is listed at the end of this closeout.
 
-_Intended run context: an Opus 5.5 coding session (for example a
-Muse / OpenRouter-backed setup). API keys and tokens are supplied by
-the operator's environment — never write one into this repo._
+## Implementation work packages
 
-## Non-negotiables
+| Package | Disposition | Evidence or reason |
+| --- | --- | --- |
+| WP0 — Windows end-to-end smoke script | Declined | A smoke script that sends desktop input cannot promise a harmless action on an unknown foreground window. Health, info, screenshot, and the live checklist are documented in `docs/VERIFICATION.md`; the owner can run the action check with a known target. No script silently injects input. |
+| WP0b — takeover interlock | Implemented; live-only confirmation remains | Hands reject acts on owner activity, gateway preserves the yield response, and `/v1/info` exposes PC/probe state. Automated coverage is in the test runner; physical-input verification remains in `docs/VERIFICATION.md`. |
+| WP1 — UI Automation control tree | Declined | The supported contract is pixel capture plus window inventory/focus and parser labels. Adding a second, privileged OS-control tree would broaden the desktop-control surface and duplicate current targeting capabilities. |
+| WP2 — custom-tools registry | Declined | Arbitrary registered tool execution is outside this relay's fixed, typed API and would create a second command allowlist and audit surface. Existing named operations remain individually validated. |
+| WP3 — batched actions | Declined | A batch can continue issuing input after the owner changes windows or takes control. Per-act receipts, owner-yield handling, and foreground pinning provide safer recovery without a multi-action execution primitive. |
+| WP4 — trajectory recording | Declined | Retaining action histories risks storing typed text and other sensitive desktop context. The existing receipt format keeps parameter names only; full trajectory persistence is intentionally not added. |
+| WP5 — browser element adapter | Declined | Browser DOM control requires a browser driver and domain-policy authority not present in this Windows desktop relay. It remains a separate integration rather than a core dependency. |
+| WP6 — nested desktop / host-app split spike | Executable prototype declined; assessment supplied | Provisioning a second desktop/agent runtime is outside the no-live-changes boundary; the supplied document is an architecture assessment, not an executed feasibility prototype. See [`SPIKE-NESTED-DESKTOP.md`](SPIKE-NESTED-DESKTOP.md). Recommendation: do not add either mode to this product without a separate security and operator decision. |
 
-- **Docker is optional, never required.** Both services are plain Python
-  and must keep running natively on Windows. The compose file is an
-  alternative deployment path, not the design.
-- **The hands never run in Docker.** They need the interactive Windows
-  desktop session. Do not containerize them, and do not design around a VM.
-- **No secrets or personal data in the repo.** No tokens, session secrets,
-  live tunnel URLs, IP addresses, email addresses, or home addresses —
-  in code, docs, tests, logs, or commit messages. Refer to "the owner" /
-  "the operator", never a person's name, outside the LICENSE file.
-- **Do not weaken the security model.** Gateway: token auth with
-  constant-time comparison and failed-guess lockout. Hands: a fresh
-  session secret per launch. Nothing listens publicly by default;
-  Tailscale is the preferred transport. A public tunnel is a fallback,
-  never the design.
-- **Do not break existing contracts casually.** The hands API
-  (screenshot / move / click / type / key / scroll, `X-Secret` auth) and
-  the parser set-of-marks contract (numbered elements with bbox + center)
-  are relied on by the gateway. Extend them; if you must change one,
-  update gateway + docs + tests in the same commit.
-- **Never fake verification.** If a step needs the owner's physical PC, a
-  GPU, or an account you don't have, implement everything that can be
-  implemented, write the exact manual verification step down, and say
-  plainly that it is unverified. A claim without a run behind it is a bug.
+## Product identity and remote rename
 
-## Current state (starting point — verify against the code)
+The source, executable, UI, service labels, and current setup documentation identify the product as **HandsRelay v4**. Existing per-user credentials remain at `%USERPROFILE%\\.HandsRelayV0.1\\` so an upgrade continues to find the gateway token and hands secret; this is a documented compatibility storage path, not the product version. Legacy `start-v2.bat` and `hands_relay_v2_app.py` entry points forward to the v4 implementation.
 
-- `services/gateway/` — Flask + Waitress. Token auth + lockout;
-  `/health`, `/v1/info` (backend reachability), `/v1/screen` (proxies the
-  hands screenshot), `/v1/act` (forwards move/click/type/key/scroll),
-  `/v1/parse` (forwards to the parser). The gateway reaches the hands via
-  the `HANDS_URL` and `HANDS_SECRET` environment values.
-- `services/parser/` — Flask + Waitress. Loads OmniParser v2 weights
-  (icon detector, optional Florence captioner) from its models directory
-  when present (`fetch_weights.py` downloads them; heavy deps are in
-  `requirements-model.txt`). With no detector loaded, `/parse` returns
-  501 — deliberately, so a driver never mistakes "no model" for "empty
-  screen".
-- `hands/` — the v1 packaged Windows app carried forward: screenshot,
-  mouse, keyboard, per-session generated secret, lockout with phone
-  alerts, Tailscale Serve preferred.
-- Smoke-tested so far: gateway against a mock hands (auth rejection,
-  screenshot proxying, action forwarding, wrong-secret error path) and
-  the parser's honest not-loaded state. **Not yet proven:** end-to-end
-  against the real hands on the owner's PC, and parser detection with
-  real weights on a GPU.
+The GitHub slug and description are remote account metadata. Proposed reviewable change: rename `ADD-Attack/HandsRelayV0.1` to `ADD-Attack/HandsRelay-v4` and set its description to: `HandsRelay v4 — authenticated Windows desktop relay with a gateway, hands service, and optional screen parser.` This commission does not rename the remote; the owner must approve that account-level change.
 
-## Work packages (do them in this order)
+## Verification boundary
 
-### WP0 — Windows end-to-end smoke script
-Add a script (PowerShell or Python) that starts the parser and gateway
-natively, checks `/health` and `/v1/info`, and — when the hands app is
-running — pulls one screenshot and performs one harmless action through
-the gateway. It prints a clear pass/fail per check and never prints a
-secret.
-**Done when:** one command on a Windows PC produces the report; when the
-hands are not running it says exactly that instead of failing obscurely.
+Run `python tools/run_all_tests.py` from the repository root. CI is defined in `.github/workflows/tests.yml`. The Windows desktop, UAC, lock-state, multi-monitor, physical takeover, and real OmniParser-weight checks are not reproducible in this Linux work environment; exact steps and limits are recorded in [`VERIFICATION.md`](VERIFICATION.md). No live relay was deployed, restarted, or reconfigured for this commission.
 
-### WP0b — Takeover interlock (the user always wins)
-Safety feature, outranks every feature package below. Raised by the
-owner on 2026-10-13 after agent keystrokes landed in the wrong window
-while he was using the PC himself: when the person at the keyboard is
-active, the agent must stop driving, immediately and automatically.
-
-- The hands watch for physical input that did **not** come from the
-  agent: the mouse ending up somewhere the agent's own act calls did
-  not put it, or a local key / mouse-button press. On detection the
-  hands enter a YIELDED state.
-- While yielded, the act endpoints refuse with HTTP 409 and a body like
-  `{"error": "user active — control yielded", "ok": false}`, and the
-  gateway passes that refusal through unchanged, so a well-behaved
-  driver backs off instead of fighting the user for the cursor.
-- Control returns after a quiet period with no local input
-  (configurable, default ~10 seconds), with no human action required.
-- The agent's own input must never trip it: track the cursor positions
-  the agent itself commanded and only yield on deviation; design the
-  keyboard side so agent-sent keys don't self-trigger (a brief
-  suppression window around act calls is acceptable — document the
-  tradeoff).
-- The gateway's `/v1/info` reports the current state
-  (`"control": "agent"` or `"control": "yielded"`), and the hands show
-  the state visibly (window/console status line) so the person at the
-  PC can see who has control.
-
-**Done when:** with the stack running, moving the physical mouse makes
-the next act call return 409 and `/v1/info` show yielded; after the
-quiet period acts succeed again; 20 consecutive agent-issued moves
-never trip the interlock; and the behavior is documented in the README.
-
-### WP1 — UIA endpoint in the hands
-Add UI Automation to the hands (pywinauto): an endpoint returning the
-control tree of the foreground window / desktop (name, control type,
-bounding rect, center, automation id, enabled, off-screen), and an act
-endpoint that clicks / invokes / sets text on an element by id from that
-tree. Same session-secret auth as the existing endpoints. Add the
-matching gateway route.
-**Done when:** the tree for Notepad and File Explorer comes back with
-usable rects, a named control in a test window is activated through UIA
-(not pixels), and the pixel endpoints are unregressed.
-
-### WP2 — Custom-tools registry in the gateway
-A small registry where named tools can be registered and invoked through
-the gateway (auth'd, allowlisted by name, every call logged). Ship two
-or three safe tools first — for example launching an allowlisted app,
-and reading window titles. Office/COM automation may be added behind an
-optional import; it must not become a hard dependency.
-**Done when:** tools are invokable through the gateway, unregistered
-names are rejected, calls appear in the log, and unit tests with mocks
-cover registration + rejection.
-
-### WP3 — Batched actions (speculative multi-action support)
-Extend `/v1/act` with a batch form: an ordered list of actions executed
-in sequence, stopping at the first failure, returning a per-step result,
-with an optional screenshot after the final step. Document the contract
-in the README. (Motivation: planners can emit 3–5 steps per model call
-instead of one round-trip per click.)
-**Done when:** a batch runs in order, a failing step halts the batch and
-is identified in the response, and the single-action form is unchanged.
-
-### WP4 — Audit log + trajectory recording
-The gateway records each session's actions to a local JSONL trajectory:
-timestamp, op, target summary, result, and a screenshot hash (not full
-screenshots by default). The storage directory is configurable, secrets
-never appear in the log, and the format is documented so a failed run
-can be replayed and debugged.
-**Done when:** a smoke run produces a complete trajectory file, a secret
-scan of the file comes back clean, and the README documents where logs
-live and how they are rotated or deleted.
-
-### WP5 — Browser element-index adapter (interface only)
-Design and stub an adapter interface for browser surfaces in the
-browser-use style: numbered DOM elements the planner can act on by
-index, with a domain allowlist enforced by the adapter. Do not pull a
-browser driver into the gateway's core dependencies; a real integration
-belongs behind an optional extra.
-**Done when:** the interface, the allowlist rule, and a fake-adapter
-test exist, and the README marks real browser integration as optional
-and not yet wired.
-
-### WP6 — Spike only: nested desktop + host/app agent split
-Research-only. Write `docs/SPIKE-NESTED-DESKTOP.md` assessing a
-Picture-in-Picture style nested desktop (agent works in a nested
-session, owner keeps theirs) and a host/app agent split for this relay:
-feasibility on current Windows, security implications, and a clear
-recommendation. **Do not implement either** — the spike's acceptance
-criteria are what a future decision gets made on.
-
-## Definition of done (every work package)
-
-- Code + tests/smoke coverage for the new behavior; existing smoke
-  behavior unregressed (`python -m py_compile` clean on touched files;
-  gateway/parser run against the mock hands without errors).
-- README and this file updated in the same commit: the package's box
-  gets checked, and any new operator step (env value, command, manual
-  check) is written down where an operator will actually find it.
-- A secret scan of the diff comes back clean (no tokens, secrets,
-  URLs-with-secrets, IPs, emails, addresses).
-
-## Commit protocol
-
-- Work on a branch named `opus-5-5-roadmap`; do not commit directly to
-  `main`.
-- Small commits: one work package per commit at most, split further when
-  a package has separable steps. Message format: `WP<n>: <what changed>`.
-- Run the relevant tests before each commit. If a test cannot run in
-  your environment (needs Windows, a GPU, or the real hands), say so in
-  the commit body and add the manual step to `docs/VERIFICATION.md`.
-- Never commit: `.env` files, model weights, screenshots containing
-  personal data, trajectory logs, build artifacts, or `__pycache__`.
-- Push the branch when each work package lands. Do **not** merge to
-  `main` yourself — the merge is the owner's call. Your final handoff
-  (below) is what he reviews.
-- **If you do not have push access to this repo** (permission error on
-  push): do not stall, and never ask the owner to share a personal
-  token. Fork the repo to your own account, push the same
-  `opus-5-5-roadmap` branch to your fork, and open a pull request from
-  the fork's branch into this repo's `main`, with the handoff report as
-  the PR description. If you cannot open PRs either, push to the fork
-  and put the fork URL + branch name at the top of your handoff report
-  so the owner can pull it himself. State plainly in the handoff which
-  route you used (direct push, fork + PR, or fork only).
-
-## Handoff report (end of run)
-
-Report, in this order:
-1. Work packages completed, with the commit hash for each.
-2. Tests actually run and their results — and which verifications are
-   still manual-only, with the exact steps for the owner to run them.
-3. Anything you changed about the contracts in "Non-negotiables", or
-   "none".
-4. Open risks or follow-ups you noticed but did not fix.
-
-## Rejected alternative (do not resurrect without new evidence)
-
-Assembling off-the-shelf engines instead of building this: UFO² as the
-desktop engine pointed at a custom model endpoint + a browser-use CLI +
-Relay v1 as the fallback. It was weighed on 2026-10-13 and the build was
-chosen. The steal list that seeded the work packages above came from
-browser-use, UFO², and OmniParser; the packages are the durable form of
-that list.
+The authoritative item-by-item commission disposition table is [COMMISSION-CLOSEOUT.md](COMMISSION-CLOSEOUT.md).

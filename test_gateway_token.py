@@ -45,7 +45,7 @@ sys.modules["pyautogui"] = _fake_gui
 sys.modules["winreg"] = types.ModuleType("winreg")
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-APP_PATH = os.path.join(HERE, "hands_relay_v2_app.py")
+APP_PATH = os.path.join(HERE, "hands_relay_v4_app.py")
 
 spec = importlib.util.spec_from_file_location("relay_app_under_test", APP_PATH)
 appmod = importlib.util.module_from_spec(spec)

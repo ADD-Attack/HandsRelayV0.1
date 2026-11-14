@@ -1,3 +1,5 @@
+> Historical implementation/reference record. Current product and dispositions: [ROADMAP.md](ROADMAP.md) and [COMMISSION-CLOSEOUT.md](COMMISSION-CLOSEOUT.md). Old product names and instructions below are retained as history, not current setup guidance.
+
 # TAKEOVER BRIEF — HandsRelay build (Opus session, 2026-10-20)
 
 You are the builder for the HandsRelay update, taking over from Astra (paused by owner direction). You work in the shared clone:

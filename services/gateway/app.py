@@ -1,4 +1,4 @@
-"""HandsRelay v2 — gateway service.
+"""HandsRelay v4 — gateway service.
 
 The agent-facing API. Owns authentication (per-deployment token, constant-time
 compare, failed-guess lockout) and routes control requests to the Windows
@@ -47,7 +47,7 @@ PARSER_URL = os.environ.get("PARSER_URL", "http://parser:5011").strip().rstrip("
 
 HANDS_OPS = {
     "move", "click", "type", "key", "scroll",
-    # V3-P4 (wishlist #3, #4, #6, #19):
+    # Window, clipboard and input operations:
     "hotkey", "break", "drag", "focus", "clipboard_set",
 }
 # Op -> hands path, for ops whose hands route is not "/<op>".
@@ -1391,8 +1391,13 @@ def _pump_receipt(receipt, now):
                 _pending_payloads.pop(receipt["id"], None)
             return receipt
         if failed or status is None:
-            receipt["state"] = "failed"
-            receipt["result"] = None
+            owner_abort = (
+                isinstance(result, dict)
+                and result.get("error_code") == "type_aborted"
+                and result.get("abort_reason") == "owner"
+            )
+            receipt["state"] = "aborted-owner" if owner_abort else "failed"
+            receipt["result"] = result if owner_abort else None
             _pending_payloads.pop(receipt["id"], None)
             return receipt
         receipt["state"] = "applied"
@@ -1592,11 +1597,16 @@ def act_queued():
         # the response body so the caller can reconcile later.
         now = time.time()
         applied = isinstance(status, int) and 200 <= status < 300
+        owner_abort = (
+            isinstance(result, dict)
+            and result.get("error_code") == "type_aborted"
+            and result.get("abort_reason") == "owner"
+        )
         receipt = {
             "id": uuid.uuid4().hex,
             "op": _short(op),
             "param_keys": _param_keys(payload),
-            "state": "applied" if applied else "failed",
+            "state": "applied" if applied else ("aborted-owner" if owner_abort else "failed"),
             # R9 (#21): which path settled it — "direct" here,
             # "after-hold" when the retry pump applies a held act.
             "applied_via": "direct" if applied else None,
