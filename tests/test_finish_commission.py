@@ -147,3 +147,19 @@ def test_upgrade_reuses_legacy_credential_file(monkeypatch, tmp_path, kind):
     loader = mod._load_or_create_gateway_token if kind == 'gateway' else mod._load_or_create_hands_secret
     assert loader() == (saved, 'saved')
     assert path.read_text() == saved + '\n'
+
+
+def test_paste_lock_after_injection_is_not_reported_as_abort(hands, monkeypatch):
+    # The paste is atomic: once Ctrl+V is sent, a later lock does not undo
+    # the delivered text, so the reply must not invite a duplicate retry.
+    locks = iter([False, True, True])
+    monkeypatch.setattr(hands, '_probe_locked', lambda: next(locks, True))
+    monkeypatch.setattr(hands, '_clipboard_backend', lambda: SimpleNamespace(get_text=lambda: 'original', set_text=lambda value: None))
+    calls = []
+    monkeypatch.setattr(hands.pyautogui, 'hotkey', lambda *args: calls.append(args))
+    with hands.app.test_request_context('/type', method='POST', json={'text': 'x' * 130}):
+        result = hands.type_text()
+    response, status = result if isinstance(result, tuple) else (result, 200)
+    assert status == 200
+    assert response.get_json()['method_used'] == 'paste'
+    assert len(calls) == 1

@@ -1064,10 +1064,11 @@ def type_text():
                 # Let the target consume the paste before restoring the
                 # previous clipboard contents.
                 time.sleep(0.1)
+            # After injection only an owner takeover is reported. A lock
+            # after the atomic paste does not undo the delivered text, and
+            # reporting it as an abort would invite a duplicate retry.
             if guard.sample():
                 state["reason"] = "owner"
-            elif _probe_locked() is True:
-                state["reason"] = "locked"
         finally:
             if readable and saved is not None:
                 try:
