@@ -157,6 +157,9 @@ def run():
         check("begin rejects filename with a backslash", r.status_code == 400)
         r = begin(drop_dir, "", data)
         check("begin rejects an empty filename", r.status_code == 400)
+        for bad in ("C:evil.bin", "a.bin:stream", "NUL", "com1.txt", "x.bin.", "x\x00.bin", "x?.bin"):
+            r = begin(drop_dir, bad, data)
+            check(f"begin rejects Windows-unsafe filename {bad!r}", r.status_code == 400)
         r = post("/filedrop/begin",
                  {"folder": drop_dir, "filename": "x.bin", "size": 0,
                   "sha256": hashlib.sha256(b"").hexdigest()})

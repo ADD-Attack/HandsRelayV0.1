@@ -2027,6 +2027,28 @@ def _filedrop_gate():
     return None
 
 
+_WIN_RESERVED_NAMES = frozenset(
+    ["CON", "PRN", "AUX", "NUL"] + [f"COM{i}" for i in range(1, 10)] + [f"LPT{i}" for i in range(1, 10)]
+)
+
+
+def _filedrop_name_ok(filename) -> bool:
+    """A bare file name that stays inside the drop folder on Windows too.
+
+    Besides separators and "..", Windows resolves "C:x" against drive C's
+    cwd (os.path.join drops the folder), "a:b" names an alternate data
+    stream, device names (NUL, COM1.txt) bypass the file system, and a
+    trailing dot or space is silently stripped.
+    """
+    if not isinstance(filename, str) or not filename or len(filename) > 255:
+        return False
+    if any(ch in filename for ch in '/\\:*?"<>|') or ".." in filename:
+        return False
+    if any(ord(ch) < 32 for ch in filename) or filename[-1] in ". ":
+        return False
+    return filename.split(".")[0].strip().upper() not in _WIN_RESERVED_NAMES
+
+
 @app.post("/filedrop/begin")
 def filedrop_begin():
     gate_resp = _filedrop_gate()
@@ -2042,13 +2064,7 @@ def filedrop_begin():
     real_folder = os.path.normcase(os.path.realpath(folder))
     if real_folder not in _filedrop_dirs():
         return jsonify({"ok": False, "error": "folder not in file-drop allowlist"}), 403
-    if (
-        not isinstance(filename, str)
-        or not filename
-        or "/" in filename
-        or "\\" in filename
-        or ".." in filename
-    ):
+    if not _filedrop_name_ok(filename):
         return jsonify({"ok": False, "error": "filename must be a bare name"}), 400
     if isinstance(size, bool) or not isinstance(size, int) or size < 1 or size > _FILEDROP_MAX_SIZE:
         return jsonify({"ok": False, "error": "size must be an integer in 1..16MB"}), 400
